@@ -2,7 +2,7 @@
 // Run with `bun test`.
 
 import { test, expect } from "bun:test";
-import { isFresh, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
+import { isFresh, manifestPaths, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
 import {
   scanRepo, logicLines, claimedLanguages, llmDependencies, regexClaims,
   forkPadding, backdatedCommits, looksScripted, mergedPrs, type Signal,
@@ -117,6 +117,33 @@ test("P1 needs 2 real test files; template tests and CI alone don't count", () =
   expect(scanRepo(r)[0]!.receipt).toBe("2 test files and CI workflows");
   expect(scanRepo(repo({ files: [{ path: "src/App.test.js", size: 10 }, { path: "src/setupTests.js", size: 10 }] }))).toEqual([]);
   expect(scanRepo(repo({ files: [{ path: ".github/workflows/pages.yml", size: 10 }] }))).toEqual([]);
+});
+
+test("signal 3: a big claim with no code is contradicted", () => {
+  const vapor = repo({ fullName: "u/ai-saas", description: "Production-ready AI SaaS platform built with Next.js", files: [{ path: "README.md", size: 100 }], languages: {} });
+  const s = scanRepo(vapor);
+  expect(ids(s)).toBe("3:contradicted");
+  expect(s[0]!.receipt).toBe('says "Production-ready", has no code');
+
+  const scaffold = repo({ description: "Cutting-edge AI", files: [{ path: "app/main.py", size: 0 }, { path: "tests/test_a.py", size: 0 }, { path: "tests/test_b.py", size: 0 }] });
+  expect(scanRepo(scaffold).map((x) => x.receipt)).toEqual(['says "Cutting-edge", has no code (3 source files, all empty)']);
+});
+
+test("signal 3 skips real code, docs repos and profile READMEs", () => {
+  const files = [{ path: "README.md", size: 100 }];
+  expect(scanRepo(repo({ description: "The world's first AI-enabled tune maker" }))).toEqual([]); // 1000 lines
+  expect(scanRepo(repo({ fullName: "u/awesome-ai", description: "Curated list of cutting-edge AI tools", files }))).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/U", description: "AI-powered developer", files }))).toEqual([]);
+  expect(scanRepo(repo({ description: "Independent third-party profile of X, the world's first AI wearable", files }))).toEqual([]);
+});
+
+test("manifests are found up to 2 folders deep, shallowest first, max 4", () => {
+  const paths = ["backend/app/requirements.txt", "frontend/package.json", "package.json", "a/b/c/package.json", "node_modules/x/package.json", "server/pyproject.toml", "web/package.json"];
+  expect(manifestPaths(paths.map((path) => ({ path, size: 1 })))).toEqual(["package.json", "frontend/package.json", "server/pyproject.toml", "web/package.json"]);
+});
+
+test("LLM SDKs in a subfolder manifest still count", () => {
+  expect(llmDependencies(repo({ manifests: { "backend/requirements.txt": "fastapi\nanthropic" } }))).toEqual(["anthropic"]);
 });
 
 test("stack claims only count real languages", () => {

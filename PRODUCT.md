@@ -19,6 +19,7 @@ Decided in a grill session on 2026-10-05.
 |---|---|---|---|
 | 1 | README words vs lines of logic | Tutorial | suspicious |
 | 2 | LLM wrapper: claims engine/model/agent, logic is mostly SDK calls | Wrapper | contradicted |
+| 3 | Empty claim: hype words ("production-ready", "world's first", "AI-powered"...) in the pitch, under 50 lines of code. Skips docs/list repos, profile READMEs, third-party write-ups | Wrapper | contradicted |
 | 4 | Template fingerprint (create-next-app/Vite defaults, tutorial names) | Tutorial | suspicious, contradicted if it claims "from scratch" |
 | 5 | Claimed stack vs GitHub language breakdown | Wrapper | contradicted |
 | 7 | Fork padding: forks with zero own commits | Farmer | suspicious |
@@ -75,6 +76,7 @@ Local commits only until v1 is done. Publish after.
 Steps 1-9 done. Step 10 (publish) not started.
 
 - Real-world pass (2026-10-05): 60 profiles. 17 working devs (contributors ranked 15 to 30 on next.js, react, deno, ruff, tailwind, django): all Real One or NPC. 10 "AI founder"-style bios: all Real One after fixes. 27 clone/hype repo owners: 10 Real One (each backed by real tests or merged PRs), 10 Unproven, 2 Tutorial Graduate, 4 NPC, 1 org (not scannable). Owners of LLM-wrapper repos: Wrapper Founder, 50/100. Fixes from it: fork padding needs half the profile, self-declared SDKs/wrappers skip signal 2, template tests and CI-only no longer earn P1, template weight 15 -> 20, Unproven archetype.
+- Hype-repo pass (2026-10-05): 35 low-star repos found by "enterprise-grade", "production-ready", "world's first". Added signal 3 after finding repos that pitch a product with zero code, including one profile with 3 "AI engine" repos made of 354 empty source files. Manifests are now read up to 2 folders deep. Empty test files no longer earn P1. Re-ran all groups: no new flags on working devs.
 - Calibration: 28/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). Both misses (pavsap, xtropi) come out Portfolio Speedrunner: they also have template repos, so Tutorial reaches 60%+ of Farmer.
 - What calibration changed: signal 8 as first written (author vs committer date) caught almost no painters, because painting scripts set both dates. It now checks dates against the repo's creation date and needs a scripted pattern. Version-bump runs are excluded.
 - Wrapper and Tutorial archetypes have no public fixtures yet (by design, they go in `fixtures.local.json`). Nick's own profile still needs a label there.

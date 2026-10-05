@@ -6,7 +6,7 @@ import type { RepoData, ProfileData, Commit } from "./gh";
 export type Group = "Wrapper" | "Tutorial" | "Farmer";
 
 export type Signal = {
-  id: string; // matches the signal table in PRODUCT.md: "1", "2", "4", "5", "7", "8", "P1", "P2"
+  id: string; // matches the signal table in PRODUCT.md: "1"-"5", "7", "8", "P1", "P2"
   group: Group | "credit";
   tier: "suspicious" | "contradicted" | "credit";
   where: string; // repo full name, or the login for profile signals
@@ -83,6 +83,8 @@ const LLM_SDKS_PY = [
 ];
 // (?<!-) skips "cross-platform", "multi-agent" style compounds.
 const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|agents?|engine|framework|intelligent|platform)\b/i;
+// Marketing claims: the pitch words that promise a finished, serious product.
+const HYPE_CLAIM = /\b(production[- ]ready|enterprise[- ]grade|world'?s first|revolutionary|next[- ]generation|cutting[- ]edge|state[- ]of[- ]the[- ]art|AI[- ](?:powered|driven))\b/i;
 // A repo that calls itself a wrapper is being honest about it.
 const SELF_DECLARED_WRAPPER = /\b(wrapper|sdk|client library|api client|bindings|proxy)\b/i;
 const SELF_DECLARED_CHARS = 1000;
@@ -91,27 +93,28 @@ const WRAPPER_MAX_LINES = 1500;
 export function llmDependencies(repo: RepoData): string[] {
   const found: string[] = [];
 
-  const pkg = repo.manifests["package.json"];
-  if (pkg) {
-    try {
-      const json = JSON.parse(pkg);
-      const deps = { ...json.dependencies, ...json.devDependencies };
-      for (const name of Object.keys(deps)) {
-        if (LLM_SDKS_NPM.includes(name) || name.startsWith("@ai-sdk/") || name.startsWith("@langchain/")) {
-          found.push(name);
+  for (const [path, text] of Object.entries(repo.manifests)) {
+    if (path.endsWith("package.json")) {
+      try {
+        const json = JSON.parse(text);
+        const deps = { ...json.dependencies, ...json.devDependencies };
+        for (const name of Object.keys(deps)) {
+          if (LLM_SDKS_NPM.includes(name) || name.startsWith("@ai-sdk/") || name.startsWith("@langchain/")) {
+            found.push(name);
+          }
         }
+      } catch {
+        // A broken package.json just means no npm deps to read.
       }
-    } catch {
-      // A broken package.json just means no npm deps to read.
+      continue;
     }
-  }
 
-  // ponytail: Python manifests are scanned line by line for a leading package name,
-  // not parsed. Use a real TOML parser if pyproject false positives show up.
-  const pyText = (repo.manifests["requirements.txt"] ?? "") + "\n" + (repo.manifests["pyproject.toml"] ?? "");
-  for (const line of pyText.split("\n")) {
-    const name = line.trim().replace(/^["']/, "").split(/[\s\[<>=~!;"',]/)[0]!.toLowerCase();
-    if (LLM_SDKS_PY.includes(name) || name.startsWith("langchain-")) found.push(name);
+    // ponytail: Python manifests are scanned line by line for a leading package name,
+    // not parsed. Use a real TOML parser if pyproject false positives show up.
+    for (const line of text.split("\n")) {
+      const name = line.trim().replace(/^["']/, "").split(/[\s\[<>=~!;"',]/)[0]!.toLowerCase();
+      if (LLM_SDKS_PY.includes(name) || name.startsWith("langchain-")) found.push(name);
+    }
   }
 
   return [...new Set(found)];
@@ -137,6 +140,40 @@ export function llmWrapper(repo: RepoData): Signal | null {
     tier: "contradicted",
     receipt: `claims "${claim[0]}", ships about ${lines} lines of code around ${sdks.join(", ")}`,
     detail: sdks[0],
+  };
+}
+
+// --- signal 3: big claim, no code ---
+
+const EMPTY_MAX_LINES = 50;
+const PITCH_CHARS = 500; // the description plus the opening of the README
+// Lists, notes, docs and write-ups about other companies have no code on purpose.
+const DOCS_REPO = /\b(awesome|curated|list of|notes|roadmap|docs|documentation|resources|third-party|profile of)\b/i;
+
+export function emptyClaim(repo: RepoData): Signal | null {
+  const [owner, name] = repo.fullName.split("/");
+  if (owner!.toLowerCase() === name!.toLowerCase()) return null; // profile README repo, about the person
+
+  const pitch = (repo.description ?? "") + "\n" + repo.readme.slice(0, PITCH_CHARS);
+  const claim = pitch.match(HYPE_CLAIM);
+  if (!claim) return null;
+  if (DOCS_REPO.test(name!.replace(/[-_]/g, " ") + "\n" + pitch)) return null;
+
+  const lines = logicLines(repo);
+  if (lines >= EMPTY_MAX_LINES) return null;
+
+  // Scaffolded-but-empty source files are worth naming: they look like code in the tree.
+  const emptyFiles = repo.files.filter((f) => f.size === 0 && CODE_EXTENSIONS.some((ext) => f.path.endsWith(ext))).length;
+  let has = lines === 0 ? "no code" : `about ${lines} lines of code`;
+  if (emptyFiles > 0) has += ` (${emptyFiles} source files, all empty)`;
+
+  return {
+    id: "3",
+    where: repo.fullName,
+    group: "Wrapper",
+    tier: "contradicted",
+    receipt: `says "${claim[0]}", has ${has}`,
+    detail: claim[0],
   };
 }
 
@@ -249,7 +286,7 @@ const MIN_TEST_FILES = 2;
 // shows up in the receipt next to tests.
 export function testsAndCi(repo: RepoData): Signal | null {
   const tests = repo.files.filter(
-    (f) => TEST_FILE.test(f.path) && !TEMPLATE_TEST.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)),
+    (f) => f.size > 0 && TEST_FILE.test(f.path) && !TEMPLATE_TEST.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)),
   );
   if (tests.length < MIN_TEST_FILES) return null;
 
@@ -261,7 +298,7 @@ export function testsAndCi(repo: RepoData): Signal | null {
 // --- entry point ---
 
 export function scanRepo(repo: RepoData): Signal[] {
-  const results = [readmeVsLogic(repo), llmWrapper(repo), templateFingerprint(repo), stackMismatch(repo), testsAndCi(repo)];
+  const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), testsAndCi(repo)];
   return results.filter((s): s is Signal => s !== null);
 }
 
@@ -269,8 +306,10 @@ export function scanRepo(repo: RepoData): Signal[] {
 
 export function regexClaims(text: string): string[] {
   const claims: string[] = [];
+  const hype = text.match(HYPE_CLAIM);
+  if (hype) claims.push(hype[0]);
   const big = text.match(BIG_CLAIM);
-  if (big) claims.push(big[0]);
+  if (big && big[0].toLowerCase() !== hype?.[0].toLowerCase()) claims.push(big[0]);
   for (const lang of claimedLanguages(text)) claims.push(`written in ${lang}`);
   const scratch = text.match(FROM_SCRATCH);
   if (scratch) claims.push(scratch[0]);

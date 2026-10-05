@@ -6,6 +6,7 @@ import type { Group, Signal } from "./scan";
 const WEIGHTS: Record<string, number> = {
   "1:suspicious": 15,
   "2:contradicted": 35,
+  "3:contradicted": 35,
   "4:suspicious": 20,
   "4:contradicted": 30,
   "5:contradicted": 30,
@@ -157,6 +158,10 @@ const QUIPS: QuipRule[] = [
   { when: (s) => s.archetype === "Real One", line: () => "The claims check out. Nothing to roast, which is the point." },
   { when: (s) => s.archetype === "Unproven", line: () => "Nothing contradicted, nothing proven. A blank page with a commit history." },
   {
+    when: (s) => find(s, "3") !== undefined,
+    line: (s) => `"${find(s, "3")!.detail}". The code is still on the roadmap.`,
+  },
+  {
     when: (s) => find(s, "5") !== undefined,
     line: (s) => `The README says ${find(s, "5")!.detail}. The code didn't get the memo.`,
   },
@@ -199,6 +204,7 @@ export function quipFor(score: Score): string {
 const FIXES: Record<string, string> = {
   "1": "Trim the README to what the code does, or ship the code it describes",
   "2": "Call it a wrapper in the README, or build the part that isn't the SDK",
+  "3": "Drop the marketing words until there's code to back them",
   "4": "Delete the template leftovers and rewrite the template README",
   "5": "Make the stack claim match the language breakdown",
   "7": "Archive or delete forks you never committed to",

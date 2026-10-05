@@ -9,9 +9,25 @@ const API = "https://api.github.com";
 const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
 // Bump when RepoData or ProfileData changes shape, so old cache files get refetched.
-const CACHE_VERSION = 3;
-// Root files read for dependency names. Only fetched when present in the tree.
+const CACHE_VERSION = 4;
+// Files read for dependency names, at the root or up to 2 folders down
+// (full-stack repos keep them in backend/ and frontend/). Shallowest first, max 4.
 const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml"];
+const MANIFEST_MAX_DEPTH = 2;
+const MAX_MANIFESTS = 4;
+
+export function manifestPaths(files: TreeFile[]): string[] {
+  const found: string[] = [];
+  for (const file of files) {
+    const parts = file.path.split("/");
+    if (parts.length - 1 > MANIFEST_MAX_DEPTH) continue;
+    if (!MANIFESTS.includes(parts[parts.length - 1]!)) continue;
+    if (file.path.includes("node_modules/")) continue;
+    found.push(file.path);
+  }
+  found.sort((a, b) => a.split("/").length - b.split("/").length);
+  return found.slice(0, MAX_MANIFESTS);
+}
 
 export type TreeFile = { path: string; size: number };
 
@@ -37,7 +53,7 @@ export type RepoData = {
   readme: string; // empty string when the repo has no README
   languages: Record<string, number>; // language -> bytes
   commits: Commit[]; // newest first, up to 100
-  manifests: Record<string, string>; // root manifest path -> file text
+  manifests: Record<string, string>; // manifest path -> file text
   fetchedAt: string;
 };
 
@@ -151,10 +167,9 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
   }
 
   const manifests: Record<string, string> = {};
-  for (const name of MANIFESTS) {
-    if (!files.some((f) => f.path === name)) continue;
-    const res = await ghGet(`/repos/${fullName}/contents/${name}`, "application/vnd.github.raw+json");
-    if (res.ok) manifests[name] = await res.text();
+  for (const path of manifestPaths(files)) {
+    const res = await ghGet(`/repos/${fullName}/contents/${path}`, "application/vnd.github.raw+json");
+    if (res.ok) manifests[path] = await res.text();
   }
 
   const data: RepoData = {
