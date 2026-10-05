@@ -47,10 +47,16 @@ export function parseStory(output: string): Story | null {
   }
 }
 
-export function narrate(input: { target: string; claimSources: string[]; score: Score; quip: string }): Story | null {
+export const DEFAULT_MODEL = "haiku";
+
+// `model` is passed straight to `claude --model`: an alias (haiku, sonnet, opus) or a full id.
+export function narrate(
+  input: { target: string; claimSources: string[]; score: Score; quip: string },
+  model: string = DEFAULT_MODEL,
+): Story | null {
   if (!Bun.which("claude")) return null;
 
-  const result = Bun.spawnSync(["claude", "-p", "--model", "haiku"], {
+  const result = Bun.spawnSync(["claude", "-p", "--model", model], {
     stdin: Buffer.from(buildPrompt(input)),
     timeout: TIMEOUT_MS,
   });

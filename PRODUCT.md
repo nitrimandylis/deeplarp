@@ -8,8 +8,8 @@ Decided in a grill session on 2026-10-05.
 
 1. **Audience: roast + self-audit.** Same engine. Scanning someone else gives a roast line. Scanning your own `gh` login gives a fix list ordered by points saved. Receipts only, never a verdict on intent.
 2. **Surface: CLI first, web later.** `bunx deeplarp <user|owner/repo>`. The core is plain functions (`scan() -> report`) that never touch the terminal. The web wrapper (Next.js + `next/og`) gets built once calibration passes (see 6).
-3. **Input: profile and repo.** `owner/repo` scans one repo. `user` runs the repo scan on pinned repos + top 3 by stars (max 4), plus profile signals. Budget: about 80 API calls and under 10 seconds per profile.
-4. **Judging: heuristics score, LLM narrates.** The score never depends on an LLM. `claude -p` (optional) extracts claims from the bio and README and rewrites the top quip. Without `claude` you get the same score with regex claims and template quips.
+3. **Input: profile and repo.** `owner/repo` scans one repo. `user` runs the repo scan on pinned repos + top 20 by stars, plus profile signals. Tutorial patterns (signals 1, 6, suspicious 4) only count on the showcase: pinned repos, or the 6 "Popular repositories" GitHub shows when nothing is pinned. Claims count on every repo. Budget (changed 2026-10-05 from 4 repos / 80 calls / 10s): about 150 API calls and 7-13 seconds for a big profile, so roughly 33 uncached profile scans per hour.
+4. **Judging: heuristics score, LLM narrates.** The score never depends on an LLM. `claude -p` (optional, `--model`, default haiku) extracts claims from the bio and README and rewrites the top quip. Without `claude` you get the same score with regex claims and template quips.
 5. **Scoring: weighted sum + evidence tiers.** Every signal is `suspicious` or `contradicted`. The top band (75-100) needs at least one contradicted signal, so suspicion alone caps at 74. Positive evidence subtracts.
 6. **Calibration bar.** 30 hand-labelled profiles, and the engine's archetype matches on at least 25. Public fixtures: Real Ones and self-declared graph-fakers only. Friends and ambiguous cases go in a gitignored `fixtures.local.json`. Nick's own profile is a labelled fixture.
 
@@ -52,7 +52,8 @@ Quips are deterministic rules (a `when` guard + a template, ordered most surpris
 ## Output
 
 - Terminal report every time: score, archetype, cap note, receipts, then a roast line or a fix list.
-- `--json` full report, `--card [path]` PNG, `--no-llm`, `--fresh` (bypass the 24h cache).
+- `--json` full report, `--no-llm`, `--model <m>`, `--fresh` (bypass the 24h cache).
+- Card flags, mirroring agent-wrapped: `--card [file.png|file.svg]`, `--layout wide|square|story`, `--theme auto|green|yellow|red|orange|violet|blue|magenta`, `--format png|svg|both`, `--handle <name>`. Any of them turns the card on.
 - Card is opt-in when scanning someone else and on by default in self mode.
 
 ## Stack
@@ -83,7 +84,8 @@ Steps 1-9 done. Step 10 (publish) not started.
 - Calibration: 28/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). Both misses (pavsap, xtropi) come out Portfolio Speedrunner: they also have template repos, so Tutorial reaches 60%+ of Farmer.
 - What calibration changed: signal 8 as first written (author vs committer date) caught almost no painters, because painting scripts set both dates. It now checks dates against the repo's creation date and needs a scripted pattern. Version-bump runs are excluded.
 - Wrapper and Tutorial archetypes have no public fixtures yet (by design, they go in `fixtures.local.json`). Nick's own profile still needs a label there.
-- Budget: a fresh profile scan is 22-29 API calls and 4-9 seconds. Most of that is GraphQL, with the commit batches in parallel.
+- Budget: see decision 3. Repo fetches run 10 at a time to stay under GitHub's per-minute limit.
+- 20-repo pass (2026-10-05): widening from 4 to 20 repos first flagged simonw (100) and gnoff (61, React core) and dropped calibration to 25/30. Causes: TIL/workshop/research repos, plugins, bug-repro repos from create-next-app, vague "platform/framework/engine" claims. Fixed with the showcase rule, docs-type and scratch-name exemptions, plugin/extension as self-declared wrappers, and "AI engine" only. Back to 29/30, all 17 working devs Real One or NPC, known larpers still caught.
 
 ## Landscape
 

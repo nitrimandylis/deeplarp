@@ -2,9 +2,9 @@
 // Never prints: the CLI and the card both render from the Report.
 
 import { fetchRepo, fetchProfile, fetchMyLogin, apiCalls, type RepoData, type ProfileData } from "./gh";
-import { scanRepo, forkPadding, backdatedCommits, mergedPrs, regexClaims, type Signal } from "./scan";
+import { scanRepo, isTutorialPattern, forkPadding, backdatedCommits, mergedPrs, regexClaims, type Signal } from "./scan";
 import { scoreSignals, quipFor, fixesFor, type Score, type Fix } from "./score";
-import { narrate } from "./llm";
+import { narrate, DEFAULT_MODEL } from "./llm";
 
 export type Report = Score & {
   target: string;
@@ -15,20 +15,21 @@ export type Report = Score & {
   claims: string[];
   reposScanned: string[];
   npcReason: string | null;
-  llm: boolean; // true when claude wrote the claims and the quip
+  model: string | null; // the model that wrote the claims and the quip, null without the LLM
   apiCalls: number;
 };
 
-export type ScanOptions = { fresh?: boolean; llm?: boolean };
+export type ScanOptions = { fresh?: boolean; llm?: boolean; model?: string };
 
-const MAX_REPOS = 4;
-const TOP_BY_STARS = 3;
+const TOP_BY_STARS = 20;
+// GitHub's secondary rate limit trips on bursts, so repos are fetched a few at a time.
+const FETCH_CONCURRENCY = 10;
 const NPC_MIN_REPOS = 3;
 const NPC_MIN_DAYS = 30;
 // Claims live near the top of a README. Further down is usually docs or quoted lists.
 const CLAIM_CHARS = 2000;
 
-// Pinned repos first, then the top 3 by stars, max 4. Forks are skipped.
+// Pinned repos first, then the top 20 by stars that aren't pinned. Forks are skipped.
 export function pickRepos(profile: ProfileData): string[] {
   const forks = new Set(profile.repos.filter((r) => r.isFork).map((r) => r.fullName));
   const picked: string[] = [];
@@ -36,7 +37,7 @@ export function pickRepos(profile: ProfileData): string[] {
   for (const name of profile.pinned) {
     if (!forks.has(name) && !picked.includes(name)) picked.push(name);
   }
-  // profile.repos is already sorted by stars. Add 3 that aren't pinned.
+  // profile.repos is already sorted by stars.
   let added = 0;
   for (const repo of profile.repos) {
     if (added === TOP_BY_STARS) break;
@@ -44,7 +45,36 @@ export function pickRepos(profile: ProfileData): string[] {
     picked.push(repo.fullName);
     added++;
   }
-  return picked.slice(0, MAX_REPOS);
+  return picked;
+}
+
+// Runs `work` over `items` with at most `limit` running at once, keeping input order.
+export async function mapLimited<T, R>(items: T[], limit: number, work: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let next = 0;
+  async function worker(): Promise<void> {
+    while (next < items.length) {
+      const i = next++;
+      results[i] = await work(items[i]!);
+    }
+  }
+  const workers: Promise<void>[] = [];
+  for (let i = 0; i < Math.min(limit, items.length); i++) workers.push(worker());
+  await Promise.all(workers);
+  return results;
+}
+
+// The repos a profile puts forward: pinned ones, or when nothing is pinned, the 6
+// "Popular repositories" GitHub shows instead. Tutorial patterns (README padding,
+// template leftovers, big-bang commits) only count here: a template left in an
+// unpinned bug repro isn't being presented as anyone's portfolio.
+const POPULAR_SHOWN = 6;
+
+export function showcase(profile: ProfileData): Set<string> {
+  const pinned = profile.pinned.filter((name) => profile.repos.some((r) => r.fullName === name && !r.isFork));
+  if (pinned.length > 0) return new Set(pinned);
+  const popular = profile.repos.filter((r) => !r.isFork).slice(0, POPULAR_SHOWN);
+  return new Set(popular.map((r) => r.fullName));
 }
 
 export function npcReason(profile: ProfileData, now: Date = new Date()): string | null {
@@ -89,9 +119,14 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
   } else {
     kind = "profile";
     const profile = await fetchProfile(resolved, fresh);
-    // Fetch the picked repos in parallel to stay under the 10 second budget.
-    repos = await Promise.all(pickRepos(profile).map((name) => fetchRepo(name, fresh)));
-    for (const repo of repos) signals.push(...scanRepo(repo));
+    repos = await mapLimited(pickRepos(profile), FETCH_CONCURRENCY, (name) => fetchRepo(name, fresh));
+    const shown = showcase(profile);
+    for (const repo of repos) {
+      for (const signal of scanRepo(repo)) {
+        if (isTutorialPattern(signal) && !shown.has(repo.fullName)) continue;
+        signals.push(signal);
+      }
+    }
 
     const profileSignals = [forkPadding(profile), backdatedCommits(profile), mergedPrs(profile)];
     for (const s of profileSignals) if (s) signals.push(s);
@@ -105,14 +140,14 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
   const self = owner.toLowerCase() === myLogin.toLowerCase();
   let quip = quipFor(score);
   let claims = dedupeClaims(claimSources.flatMap((text) => regexClaims(text.slice(0, CLAIM_CHARS))));
-  let llm = false;
+  let model: string | null = null;
 
   if (options.llm !== false) {
-    const story = narrate({ target: resolved, claimSources, score, quip });
+    const story = narrate({ target: resolved, claimSources, score, quip }, options.model);
     if (story) {
       claims = story.claims;
       quip = story.quip;
-      llm = true;
+      model = options.model ?? DEFAULT_MODEL;
     }
   }
 
@@ -126,7 +161,7 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
     claims,
     reposScanned: repos.map((r) => r.fullName),
     npcReason: npc,
-    llm,
+    model,
     apiCalls,
   };
 }

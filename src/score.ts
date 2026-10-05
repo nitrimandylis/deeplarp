@@ -19,8 +19,10 @@ const WEIGHTS: Record<string, number> = {
 };
 
 // The same signal on another repo adds half its weight: the first repo proves it,
-// repeats confirm it's a pattern. At most 4 repos are scanned, so at most 3 repeats.
+// repeats confirm it's a pattern. Only the first 3 repeats count, so scanning 20 repos
+// doesn't score higher than scanning 4 for the same pattern.
 const REPEAT_SHARE = 0.5;
+const MAX_REPEATS = 3;
 
 // Credits lower the score but can't launder a contradiction: tests in one repo don't
 // undo a painted graph in another. Total credit is floored at this.
@@ -75,7 +77,7 @@ export function combine(signals: Signal[]): ScoredSignal[] {
 
     const base = weightOf(strongest);
     const perRepeat = Math.round(Math.abs(base) * REPEAT_SHARE) * Math.sign(base);
-    const extra = (list.length - 1) * perRepeat;
+    const extra = Math.min(list.length - 1, MAX_REPEATS) * perRepeat;
 
     scored.push({
       id,
@@ -117,20 +119,34 @@ export function archetypeFor(score: number, groups: Record<Group, number>, hasCr
   return SINGLES[top];
 }
 
+// Trims credit points so they add up to at most MAX_CREDIT, biggest credit first.
+// The receipts then show the points the score really used.
+export function applyCreditFloor(signals: ScoredSignal[]): void {
+  let room = MAX_CREDIT;
+  for (const s of signals) {
+    if (s.group !== "credit") continue;
+    s.points = Math.max(s.points, room);
+    room -= s.points;
+  }
+}
+
+// How much credit is still available before the floor (0 or negative).
+function creditRoom(signals: ScoredSignal[]): number {
+  let used = 0;
+  for (const s of signals) if (s.group === "credit") used += s.points;
+  return MAX_CREDIT - used;
+}
+
 export function scoreSignals(signals: Signal[], npc = false): Score {
   const scored = combine(signals);
+  applyCreditFloor(scored);
+
   const groups: Record<Group, number> = { Wrapper: 0, Tutorial: 0, Farmer: 0 };
   let total = 0;
-  let credit = 0;
   for (const s of scored) {
-    if (s.group === "credit") {
-      credit += s.points;
-    } else {
-      total += s.points;
-      groups[s.group] += s.points;
-    }
+    total += s.points;
+    if (s.group !== "credit") groups[s.group] += s.points;
   }
-  total += Math.max(credit, MAX_CREDIT);
 
   if (npc) return { score: null, capped: false, archetype: "NPC", groups, signals: scored };
 
@@ -228,12 +244,15 @@ export function fixesFor(score: Score, kind: "repo" | "profile"): Fix[] {
     fixes.push({ text: `${FIXES[s.id]} (${where})`, points: s.points });
   }
 
-  // Missing credits are fixes too: they'd subtract points if they existed.
-  if (!score.signals.some((s) => s.id === "P1")) {
-    fixes.push({ text: "Add tests and a CI workflow", points: -WEIGHTS["P1:credit"]! });
+  // Missing credits are fixes too, worth whatever room is left under the credit floor.
+  let room = creditRoom(score.signals);
+  if (!score.signals.some((s) => s.id === "P1") && room < 0) {
+    const saved = Math.min(-WEIGHTS["P1:credit"]!, -room);
+    fixes.push({ text: "Add tests to a repo (2+ test files)", points: saved });
+    room += saved;
   }
-  if (kind === "profile" && !score.signals.some((s) => s.id === "P2")) {
-    fixes.push({ text: "Get a PR merged into someone else's project", points: -WEIGHTS["P2:credit"]! });
+  if (kind === "profile" && !score.signals.some((s) => s.id === "P2") && room < 0) {
+    fixes.push({ text: "Get a PR merged into someone else's project", points: Math.min(-WEIGHTS["P2:credit"]!, -room) });
   }
 
   fixes.sort((a, b) => b.points - a.points);

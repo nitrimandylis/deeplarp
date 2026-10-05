@@ -46,6 +46,16 @@ function claimText(repo: RepoData): string {
   return (repo.description ?? "") + "\n" + repo.readme;
 }
 
+// Lists, notes, docs, talks and write-ups about other companies: no code on purpose,
+// and their READMEs quote other people's claims. Checked on the name and description
+// only, since plenty of real READMEs link to "docs".
+const DOCS_REPO = /\b(awesome|curated|list of|notes|roadmap|docs|documentation|resources|third-party|profile of|til|today i learned|workshop|talk|slides|course|handout|research|experiments)\b/i;
+
+export function isDocsRepo(repo: RepoData): boolean {
+  const name = repo.fullName.split("/")[1]!.replace(/[-_]/g, " ");
+  return DOCS_REPO.test(name + "\n" + (repo.description ?? ""));
+}
+
 function hasFile(repo: RepoData, path: string): boolean {
   return repo.files.some((f) => f.path === path);
 }
@@ -56,6 +66,7 @@ const README_MIN_WORDS = 400;
 const README_RATIO = 1.5; // README words per line of logic
 
 export function readmeVsLogic(repo: RepoData): Signal | null {
+  if (isDocsRepo(repo)) return null;
   const words = wordCount(repo.readme);
   const lines = logicLines(repo);
   if (words < README_MIN_WORDS) return null;
@@ -82,11 +93,13 @@ const LLM_SDKS_PY = [
   "ollama", "llama-index", "litellm", "cohere", "mistralai",
 ];
 // (?<!-) skips "cross-platform", "multi-agent" style compounds.
-const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|agents?|engine|framework|intelligent|platform)\b/i;
+// "platform", "framework" and a bare "engine" mostly name someone else's product
+// (Vercel's platform, React the framework, a game engine), so only "AI engine" counts.
+const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|agents?|AI engine|intelligent)\b/i;
 // Marketing claims: the pitch words that promise a finished, serious product.
 const HYPE_CLAIM = /\b(production[- ]ready|enterprise[- ]grade|world'?s first|revolutionary|next[- ]generation|cutting[- ]edge|state[- ]of[- ]the[- ]art|AI[- ](?:powered|driven))\b/i;
 // A repo that calls itself a wrapper is being honest about it.
-const SELF_DECLARED_WRAPPER = /\b(wrapper|sdk|client library|api client|bindings|proxy)\b/i;
+const SELF_DECLARED_WRAPPER = /\b(wrapper|sdk|client library|api client|bindings|proxy|plugin|extension|integration|adapter|provider)\b/i;
 const SELF_DECLARED_CHARS = 1000;
 const WRAPPER_MAX_LINES = 1500;
 
@@ -147,8 +160,6 @@ export function llmWrapper(repo: RepoData): Signal | null {
 
 const EMPTY_MAX_LINES = 50;
 const PITCH_CHARS = 500; // the description plus the opening of the README
-// Lists, notes, docs and write-ups about other companies have no code on purpose.
-const DOCS_REPO = /\b(awesome|curated|list of|notes|roadmap|docs|documentation|resources|third-party|profile of)\b/i;
 
 export function emptyClaim(repo: RepoData): Signal | null {
   const [owner, name] = repo.fullName.split("/");
@@ -157,7 +168,7 @@ export function emptyClaim(repo: RepoData): Signal | null {
   const pitch = (repo.description ?? "") + "\n" + repo.readme.slice(0, PITCH_CHARS);
   const claim = pitch.match(HYPE_CLAIM);
   if (!claim) return null;
-  if (DOCS_REPO.test(name!.replace(/[-_]/g, " ") + "\n" + pitch)) return null;
+  if (isDocsRepo(repo)) return null;
 
   const lines = logicLines(repo);
   if (lines >= EMPTY_MAX_LINES) return null;
@@ -249,6 +260,7 @@ export function claimedLanguages(text: string): string[] {
 }
 
 export function stackMismatch(repo: RepoData): Signal | null {
+  if (isDocsRepo(repo)) return null;
   const total = Object.values(repo.languages).reduce((sum, bytes) => sum + bytes, 0);
   if (total === 0) return null;
 
@@ -326,13 +338,21 @@ export function testsAndCi(repo: RepoData): Signal | null {
 // Repos that say they're a learning exercise aren't presenting tutorial work as their
 // own product. Specific phrases only: a bare "demo" would match every "Live Demo" link.
 const SELF_DECLARED_LEARNING = /\b(demo (project|app)|practice (project|repo)|learning (project|purposes|exercise)|for learning|built while learning|course project|class project|college project|university project|bootcamp|assignment|homework|follow(ed|ing) (a|the|along)( \w+)? tutorial|tutorial by|my first)\b/i;
-const LEARNING_NAME = /\b(practice|learning|assignment|homework|exercise|tutorial|course)\b/i;
+// Names that mark a repo as practice or scratch work: bug repros, playgrounds, starters.
+const LEARNING_NAME = /\b(practice|learning|assignment|homework|exercise|tutorial|course|test|repro|reproduction|playground|sandbox|example|examples|lab|poc|demo|starter|template|boilerplate)\b/i;
 
 export function selfDeclaredLearning(repo: RepoData): boolean {
   const name = repo.fullName.split("/")[1]!.replace(/[-_]/g, " ");
   if (LEARNING_NAME.test(name)) return true;
+  // A description like "Cookiecutter template for..." is a label too.
+  if (/\b(template|cookiecutter|starter|boilerplate)\b/i.test(repo.description ?? "")) return true;
   const pitch = (repo.description ?? "") + "\n" + repo.readme.slice(0, SELF_DECLARED_CHARS);
   return SELF_DECLARED_LEARNING.test(pitch);
+}
+
+// Signals that only count on repos someone chose to show off (see report.ts showcase).
+export function isTutorialPattern(signal: Signal): boolean {
+  return exemptWhenLearning(signal);
 }
 
 // Signals an honest learning repo skips. A "from scratch" claim over template files

@@ -81,17 +81,29 @@ export function getToken(): string {
 // Counts every request so the CLI can report the API cost of a scan.
 export let apiCalls = 0;
 
+// GitHub has two limits. The hourly one (5000 requests) sets remaining to 0 and gives a
+// reset time. The per-minute "secondary" one sends retry-after in seconds. Any other 403
+// (a blocked repo, say) isn't a rate limit and gets handled by the caller.
+export function rateLimitMessage(status: number, headers: Headers): string | null {
+  if (status !== 403 && status !== 429) return null;
+  const retryAfter = headers.get("retry-after");
+  if (retryAfter) return `GitHub says too many requests too fast. Wait ${retryAfter} seconds and try again.`;
+  if (headers.get("x-ratelimit-remaining") === "0") {
+    const reset = headers.get("x-ratelimit-reset");
+    const when = reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : "later";
+    return `GitHub's hourly limit is used up. Try again after ${when}.`;
+  }
+  return status === 429 ? "GitHub says too many requests. Wait a minute and try again." : null;
+}
+
 async function ghGet(path: string, accept = "application/vnd.github+json"): Promise<Response> {
   apiCalls++;
   const res = await fetch(API + path, {
     headers: { Authorization: `Bearer ${getToken()}`, Accept: accept },
   });
 
-  if (res.status === 403 || res.status === 429) {
-    const reset = res.headers.get("x-ratelimit-reset");
-    const when = reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : "later";
-    throw new Error(`GitHub rate limit hit. Try again after ${when}.`);
-  }
+  const limited = rateLimitMessage(res.status, res.headers);
+  if (limited) throw new Error(limited);
   return res;
 }
 
@@ -257,6 +269,8 @@ async function ghGraphql(query: string, variables: Record<string, string | null>
   });
   // 502/504 here means the query timed out on GitHub's side; one retry usually lands.
   if ((res.status === 502 || res.status === 504) && retries > 0) return ghGraphql(query, variables, retries - 1);
+  const limited = rateLimitMessage(res.status, res.headers);
+  if (limited) throw new Error(limited);
   if (!res.ok) throw new Error(`GitHub GraphQL ${res.status}`);
   const body = await res.json();
   // Partial errors (one unreadable repo in a batch) still return data; only fail on none.

@@ -2,16 +2,16 @@
 // Run with `bun test`.
 
 import { test, expect } from "bun:test";
-import { isFresh, manifestPaths, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
+import { isFresh, manifestPaths, rateLimitMessage, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
 import {
   scanRepo, logicLines, claimedLanguages, llmDependencies, regexClaims,
   forkPadding, backdatedCommits, looksScripted, mergedPrs, type Signal,
 } from "./scan";
 import { scoreSignals, archetypeFor, quipFor, fixesFor, SUSPICION_CAP } from "./score";
-import { pickRepos, npcReason, type Report } from "./report";
+import { pickRepos, npcReason, mapLimited, showcase, type Report } from "./report";
 import { parseStory, buildPrompt } from "./llm";
-import { normaliseArgs, defaultCardPath, formatReport } from "./cli";
-import { renderCard } from "./card";
+import { normaliseArgs, cardPaths, formatReport } from "./cli";
+import { renderCard, renderSvg, accentFor } from "./card";
 
 function repo(overrides: Partial<RepoData> = {}): RepoData {
   return {
@@ -65,6 +65,13 @@ test("cache freshness is 24 hours", () => {
   const now = new Date("2026-10-05T12:00:00Z");
   expect(isFresh("2026-10-05T00:00:00Z", now)).toBe(true);
   expect(isFresh("2026-10-04T11:00:00Z", now)).toBe(false);
+});
+
+test("rate limit messages: per-minute, hourly, and a plain 403 that isn't one", () => {
+  expect(rateLimitMessage(403, new Headers({ "retry-after": "60" }))).toContain("Wait 60 seconds");
+  expect(rateLimitMessage(403, new Headers({ "x-ratelimit-remaining": "0", "x-ratelimit-reset": "1790000000" }))).toContain("hourly limit");
+  expect(rateLimitMessage(403, new Headers({ "x-ratelimit-remaining": "4000" }))).toBeNull();
+  expect(rateLimitMessage(200, new Headers())).toBeNull();
 });
 
 // --- repo signals ---
@@ -154,6 +161,19 @@ test("big-bang: 3000+ lines in 3 or fewer commits", () => {
   expect(scanRepo(repo({ commits: [commit] }))).toEqual([]); // 1000 lines is too small to call
 });
 
+test("docs-type repos (TIL, workshops) skip README ratio, empty claims and stack claims", () => {
+  const til = repo({ fullName: "u/til", description: "Things I've learned", readme: "Written in Go. " + "word ".repeat(3000), languages: { HTML: 1000 } });
+  expect(scanRepo(til)).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/nicar-scraping", description: "Workshop: cutting-edge scraping", files: [] }))).toEqual([]);
+});
+
+test("scratch repo names (repros, playgrounds) skip the template signal", () => {
+  const leftovers = [{ path: "public/next.svg", size: 1 }, { path: "public/vercel.svg", size: 1 }, { path: "src/a.ts", size: 4000 }];
+  expect(scanRepo(repo({ fullName: "u/isr-test", files: leftovers }))).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/next-playground", files: leftovers }))).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/click-app", description: "Cookiecutter template for CLI tools", files: leftovers }))).toEqual([]);
+});
+
 test("honesty exemption: learning repos skip tutorial signals, not claims", () => {
   const leftovers = [{ path: "public/next.svg", size: 1 }, { path: "public/vercel.svg", size: 1 }, { path: "src/a.ts", size: 4000 }];
   expect(ids(scanRepo(repo({ files: leftovers })))).toBe("4:suspicious");
@@ -207,7 +227,9 @@ test("self-declared wrappers and cross-platform aren't wrapper claims", () => {
   expect(scanRepo(repo({ description: "Unified SDK for the AI engine of your choice", manifests: deps }))).toEqual([]);
   expect(scanRepo(repo({ description: "A cross-platform chat app", manifests: deps }))).toEqual([]);
   expect(scanRepo(repo({ fullName: "u/ai-special-sdk", description: "AI Platform", manifests: deps }))).toEqual([]);
-  expect(ids(scanRepo(repo({ description: "An AI platform for chat", manifests: deps })))).toBe("2:contradicted");
+  expect(ids(scanRepo(repo({ description: "An AI-powered chat assistant", manifests: deps })))).toBe("2:contradicted");
+  expect(scanRepo(repo({ description: "An AI platform for chat", manifests: deps }))).toEqual([]); // "platform" alone is too vague
+  expect(scanRepo(repo({ fullName: "u/llm-openrouter", description: "LLM plugin for an AI-powered router", manifests: deps }))).toEqual([]);
 });
 
 test("scripted commits: repeated messages or one clock time, but not version bumps", () => {
@@ -280,6 +302,14 @@ test("credits are floored at -20 so they can't erase a contradiction", () => {
   expect(s.archetype).toBe("Contribution Farmer");
 });
 
+test("receipts show credit after the floor, so they add up to the score", () => {
+  const p1 = ["a/1", "a/2", "a/3", "a/4"].map((where) => signal("P1", "credit", "credit", where)); // -10 -5 -5 -5
+  const s = scoreSignals([...p1, signal("P2", "credit", "credit")]);
+  expect(s.signals.map((x) => `${x.id}:${x.points}`).join(" ")).toBe("P1:-20 P2:0");
+  // Credit is full, so missing credits don't show up as fixes.
+  expect(fixesFor(s, "profile")).toEqual([]);
+});
+
 test("credits subtract and the score never goes below 0", () => {
   const s = scoreSignals([signal("P1", "credit", "credit"), signal("P2", "credit", "credit")]);
   expect(s.score).toBe(0);
@@ -312,20 +342,46 @@ test("the most surprising quip wins", () => {
 test("fix list is ordered by points and includes missing credits", () => {
   const s = scoreSignals([signal("1", "suspicious", "Tutorial"), signal("2", "contradicted", "Wrapper")]);
   const fixes = fixesFor(s, "profile");
-  expect(fixes.map((f) => f.points)).toEqual([35, 15, 15, 10]);
+  // P1 is worth 10, then P2 only gets the 10 left under the -20 credit floor.
+  expect(fixes.map((f) => f.points)).toEqual([35, 15, 10, 10]);
   expect(fixes[0]!.text).toContain("someone/thing");
   expect(fixesFor(s, "repo").some((f) => f.text.includes("PR merged"))).toBe(false);
 });
 
 // --- report ---
 
-test("repo pick: pinned first, then top 3 by stars, no forks, max 4", () => {
+test("repo pick: pinned first, then the top 20 by stars, no forks", () => {
   const r = (name: string, isFork = false) => profileRepo({ fullName: name, isFork });
   const p = profile({
     pinned: ["u/pin", "u/fork"],
     repos: [r("u/fork", true), r("u/a"), r("u/pin"), r("u/b"), r("u/c")],
   });
   expect(pickRepos(p)).toEqual(["u/pin", "u/a", "u/b", "u/c"]);
+
+  const many = profile({ repos: Array.from({ length: 30 }, (_, i) => r(`u/r${i}`)) });
+  expect(pickRepos(many).length).toBe(20);
+  expect(pickRepos(many)[19]).toBe("u/r19");
+});
+
+test("showcase: pinned repos, else the top 6 GitHub shows as Popular", () => {
+  const r = (name: string, isFork = false) => profileRepo({ fullName: name, isFork });
+  const repos = [r("u/fork", true), ...Array.from({ length: 8 }, (_, i) => r(`u/r${i}`))];
+  expect([...showcase(profile({ pinned: ["u/r5", "u/fork"], repos }))]).toEqual(["u/r5"]);
+  expect([...showcase(profile({ repos }))]).toEqual(["u/r0", "u/r1", "u/r2", "u/r3", "u/r4", "u/r5"]);
+});
+
+test("mapLimited keeps order and never runs more than the limit at once", async () => {
+  let running = 0;
+  let peak = 0;
+  const out = await mapLimited([1, 2, 3, 4, 5, 6, 7], 3, async (n) => {
+    running++;
+    peak = Math.max(peak, running);
+    await Bun.sleep(5);
+    running--;
+    return n * 10;
+  });
+  expect(out).toEqual([10, 20, 30, 40, 50, 60, 70]);
+  expect(peak).toBe(3);
 });
 
 test("NPC: under 3 own repos or account under 30 days", () => {
@@ -360,14 +416,16 @@ test("--card takes an optional .png path", () => {
   expect(normaliseArgs(["--card", "--json"])).toEqual(["--card=", "--json"]);
   expect(normaliseArgs(["--card", "out.png", "u"])).toEqual(["--card=out.png", "u"]);
   expect(normaliseArgs(["--card", "u"])).toEqual(["--card=", "u"]);
-  expect(defaultCardPath("a/b")).toBe("deeplarp-a_b.png");
+  expect(normaliseArgs(["--card", "out.svg"])).toEqual(["--card=out.svg"]);
+  expect(cardPaths("", "a/b", "wide", "png")).toEqual(["deeplarp-a_b-wide.png"]);
+  expect(cardPaths("me.png", "a/b", "story", "both")).toEqual(["me.png", "me.svg"]);
 });
 
 function fakeReport(self: boolean): Report {
   const s = scoreSignals([signal("4", "suspicious", "Tutorial"), signal("P1", "credit", "credit")]);
   return {
     ...s, target: "someone/thing", kind: "repo", self, quip: "the quip", fixes: fixesFor(s, "repo"),
-    claims: ["from scratch"], reposScanned: ["someone/thing"], npcReason: null, llm: false, apiCalls: 0,
+    claims: ["from scratch"], reposScanned: ["someone/thing"], npcReason: null, model: null, apiCalls: 0,
   };
 }
 
@@ -382,9 +440,21 @@ test("terminal report: roast line for others, fix list for yourself", () => {
   expect(mine).toContain("(you)");
 });
 
-test("card renders a 1200x630 PNG", async () => {
-  const png = await renderCard(fakeReport(false));
-  expect(png.subarray(1, 4).toString()).toBe("PNG");
-  expect(png.readUInt32BE(16)).toBe(1200);
-  expect(png.readUInt32BE(20)).toBe(630);
+test("card renders every layout at its size", async () => {
+  const sizes = { wide: [1200, 630], square: [1080, 1080], story: [1080, 1920] } as const;
+  for (const [layout, [w, h]] of Object.entries(sizes)) {
+    const png = await renderCard(fakeReport(false), { layout: layout as "wide", theme: "auto" });
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+    expect([png.readUInt32BE(16), png.readUInt32BE(20)]).toEqual([w, h]);
+  }
+  const svg = await renderSvg(fakeReport(false), { layout: "wide", theme: "violet", handle: "@me" });
+  expect(svg.startsWith("<svg")).toBe(true);
+});
+
+test("theme: auto follows the score, named themes override, unknown ones throw", () => {
+  const r = fakeReport(false); // 10/100 Real One
+  expect(accentFor(r, "auto")).toBe("#5ccf8a");
+  expect(accentFor({ ...r, score: 80 }, "auto")).toBe("#ff5c39");
+  expect(accentFor(r, "violet")).toBe("#a78bfa");
+  expect(() => accentFor(r, "plaid")).toThrow("Unknown theme");
 });
