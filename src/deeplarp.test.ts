@@ -154,6 +154,17 @@ test("big-bang: 3000+ lines in 3 or fewer commits", () => {
   expect(scanRepo(repo({ commits: [commit] }))).toEqual([]); // 1000 lines is too small to call
 });
 
+test("honesty exemption: learning repos skip tutorial signals, not claims", () => {
+  const leftovers = [{ path: "public/next.svg", size: 1 }, { path: "public/vercel.svg", size: 1 }, { path: "src/a.ts", size: 4000 }];
+  expect(ids(scanRepo(repo({ files: leftovers })))).toBe("4:suspicious");
+  expect(scanRepo(repo({ files: leftovers, readme: "A practice project for learning Next.js" }))).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/git_practice", files: leftovers }))).toEqual([]);
+  // "Live Demo" is a link, not a label.
+  expect(ids(scanRepo(repo({ files: leftovers, readme: "Live Demo: https://x.dev" })))).toBe("4:suspicious");
+  // A from-scratch claim is still contradicted, label or not.
+  expect(ids(scanRepo(repo({ files: leftovers, readme: "Bootcamp project, built from scratch" })))).toBe("4:contradicted");
+});
+
 test("stack claims only count real languages", () => {
   expect(claimedLanguages("Written in pure C++ and built with React")).toEqual(["c++"]);
   expect(claimedLanguages("made with TypeScript")).toEqual(["typescript"]);
@@ -240,7 +251,7 @@ test("merged PRs elsewhere give the P2 credit", () => {
 
 test("suspicion alone caps at 74", () => {
   const s = scoreSignals([signal("1", "suspicious", "Tutorial"), signal("4", "suspicious", "Tutorial"), signal("7", "suspicious", "Farmer"), signal("8", "suspicious", "Farmer"), signal("1", "suspicious", "Tutorial", "someone/b"), signal("4", "suspicious", "Tutorial", "someone/b")]);
-  // 20 + 25 + 15 + 20 = 80, over the cap
+  // (15 + 8) + (20 + 10) + 15 + 20 = 88, over the cap
   expect(s.score).toBe(SUSPICION_CAP);
   expect(s.capped).toBe(true);
 });
@@ -251,7 +262,7 @@ test("a contradicted signal lifts the cap", () => {
   expect(s.capped).toBe(false);
 });
 
-test("repeats add 5 per extra repo, at most 2 extras, at the strongest tier", () => {
+test("repeats add half the weight per extra repo, at the strongest tier", () => {
   const s = scoreSignals([
     signal("4", "suspicious", "Tutorial", "a/1"),
     signal("4", "contradicted", "Tutorial", "a/2"),
@@ -259,7 +270,7 @@ test("repeats add 5 per extra repo, at most 2 extras, at the strongest tier", ()
     signal("4", "suspicious", "Tutorial", "a/4"),
   ]);
   expect(s.signals[0]!.tier).toBe("contradicted");
-  expect(s.signals[0]!.points).toBe(40);
+  expect(s.signals[0]!.points).toBe(30 + 3 * 15);
   expect(s.signals[0]!.receipts.length).toBe(4);
 });
 

@@ -321,11 +321,34 @@ export function testsAndCi(repo: RepoData): Signal | null {
   return { id: "P1", group: "credit", tier: "credit", where: repo.fullName, receipt };
 }
 
+// --- honesty exemption ---
+
+// Repos that say they're a learning exercise aren't presenting tutorial work as their
+// own product. Specific phrases only: a bare "demo" would match every "Live Demo" link.
+const SELF_DECLARED_LEARNING = /\b(demo (project|app)|practice (project|repo)|learning (project|purposes|exercise)|for learning|built while learning|course project|class project|college project|university project|bootcamp|assignment|homework|follow(ed|ing) (a|the|along)( \w+)? tutorial|tutorial by|my first)\b/i;
+const LEARNING_NAME = /\b(practice|learning|assignment|homework|exercise|tutorial|course)\b/i;
+
+export function selfDeclaredLearning(repo: RepoData): boolean {
+  const name = repo.fullName.split("/")[1]!.replace(/[-_]/g, " ");
+  if (LEARNING_NAME.test(name)) return true;
+  const pitch = (repo.description ?? "") + "\n" + repo.readme.slice(0, SELF_DECLARED_CHARS);
+  return SELF_DECLARED_LEARNING.test(pitch);
+}
+
+// Signals an honest learning repo skips. A "from scratch" claim over template files
+// (4, contradicted) still counts: that's a claim, not a label.
+function exemptWhenLearning(signal: Signal): boolean {
+  if (signal.id === "1" || signal.id === "6") return true;
+  return signal.id === "4" && signal.tier === "suspicious";
+}
+
 // --- entry point ---
 
 export function scanRepo(repo: RepoData): Signal[] {
   const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), bigBang(repo), testsAndCi(repo)];
-  return results.filter((s): s is Signal => s !== null);
+  const fired = results.filter((s): s is Signal => s !== null);
+  if (!selfDeclaredLearning(repo)) return fired;
+  return fired.filter((s) => !exemptWhenLearning(s));
 }
 
 // --- claims found without an LLM (shown in the report, never scored on their own) ---

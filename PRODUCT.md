@@ -28,6 +28,8 @@ Decided in a grill session on 2026-10-05.
 | P1 | Tests and CI exist | credit | subtracts |
 | P2 | Merged PRs to other people's repos | credit | subtracts |
 
+A signal that fires on more than one repo adds half its weight per extra repo (3 empty-claim repos: 35 + 18 + 18 = 71). Repos that label themselves a learning exercise ("practice project", "course project", "bootcamp", "followed a tutorial", or practice/assignment/tutorial in the name) skip signals 1, 6 and suspicious 4. A "from scratch" claim over template files still counts.
+
 Credits are floored at -20 in total, so tests and PRs can't erase a contradiction.
 
 Cut on purpose: star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).

@@ -18,9 +18,9 @@ const WEIGHTS: Record<string, number> = {
   "P2:credit": -15,
 };
 
-// The same signal on more repos adds a little, not the full weight again.
-const EXTRA_PER_REPO = 5;
-const MAX_EXTRAS = 2;
+// The same signal on another repo adds half its weight: the first repo proves it,
+// repeats confirm it's a pattern. At most 4 repos are scanned, so at most 3 repeats.
+const REPEAT_SHARE = 0.5;
 
 // Credits lower the score but can't launder a contradiction: tests in one repo don't
 // undo a painted graph in another. Total credit is floored at this.
@@ -74,8 +74,8 @@ export function combine(signals: Signal[]): ScoredSignal[] {
     }
 
     const base = weightOf(strongest);
-    const extras = Math.min(list.length - 1, MAX_EXTRAS);
-    const extra = extras * EXTRA_PER_REPO * Math.sign(base);
+    const perRepeat = Math.round(Math.abs(base) * REPEAT_SHARE) * Math.sign(base);
+    const extra = (list.length - 1) * perRepeat;
 
     scored.push({
       id,
