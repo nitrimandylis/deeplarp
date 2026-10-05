@@ -205,14 +205,14 @@ test("merged PRs elsewhere give the P2 credit", () => {
 
 test("suspicion alone caps at 74", () => {
   const s = scoreSignals([signal("1", "suspicious", "Tutorial"), signal("4", "suspicious", "Tutorial"), signal("7", "suspicious", "Farmer"), signal("8", "suspicious", "Farmer"), signal("1", "suspicious", "Tutorial", "someone/b"), signal("4", "suspicious", "Tutorial", "someone/b")]);
-  // 20 + 20 + 15 + 20 = 75, one over the cap
+  // 20 + 25 + 15 + 20 = 80, over the cap
   expect(s.score).toBe(SUSPICION_CAP);
   expect(s.capped).toBe(true);
 });
 
 test("a contradicted signal lifts the cap", () => {
   const s = scoreSignals([signal("2", "contradicted", "Wrapper"), signal("5", "contradicted", "Wrapper"), signal("4", "suspicious", "Tutorial")]);
-  expect(s.score).toBe(80);
+  expect(s.score).toBe(85);
   expect(s.capped).toBe(false);
 });
 
@@ -240,14 +240,15 @@ test("credits subtract and the score never goes below 0", () => {
   expect(s.archetype).toBe("Real One");
 });
 
-test("archetypes: single group, combo at 60%, Real One under 20", () => {
-  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 0, Farmer: 0 })).toBe("Wrapper Founder");
-  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 30, Farmer: 0 })).toBe("Prompt Engineer");
-  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 29, Farmer: 0 })).toBe("Wrapper Founder");
-  expect(archetypeFor(50, { Wrapper: 20, Tutorial: 0, Farmer: 30 })).toBe("Hype Merchant");
-  expect(archetypeFor(50, { Wrapper: 0, Tutorial: 30, Farmer: 30 })).toBe("Portfolio Speedrunner");
-  expect(archetypeFor(50, { Wrapper: 0, Tutorial: 0, Farmer: 50 })).toBe("Contribution Farmer");
-  expect(archetypeFor(19, { Wrapper: 35, Tutorial: 0, Farmer: 0 })).toBe("Real One");
+test("archetypes: single group, combo at 60%, under 20 is Real One with credit, else Unproven", () => {
+  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 0, Farmer: 0 }, false)).toBe("Wrapper Founder");
+  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 30, Farmer: 0 }, false)).toBe("Prompt Engineer");
+  expect(archetypeFor(50, { Wrapper: 50, Tutorial: 29, Farmer: 0 }, false)).toBe("Wrapper Founder");
+  expect(archetypeFor(50, { Wrapper: 20, Tutorial: 0, Farmer: 30 }, false)).toBe("Hype Merchant");
+  expect(archetypeFor(50, { Wrapper: 0, Tutorial: 30, Farmer: 30 }, false)).toBe("Portfolio Speedrunner");
+  expect(archetypeFor(50, { Wrapper: 0, Tutorial: 0, Farmer: 50 }, false)).toBe("Contribution Farmer");
+  expect(archetypeFor(19, { Wrapper: 35, Tutorial: 0, Farmer: 0 }, true)).toBe("Real One");
+  expect(archetypeFor(19, { Wrapper: 35, Tutorial: 0, Farmer: 0 }, false)).toBe("Unproven");
 });
 
 test("NPCs get no score", () => {
@@ -326,7 +327,7 @@ function fakeReport(self: boolean): Report {
 
 test("terminal report: roast line for others, fix list for yourself", () => {
   const other = formatReport(fakeReport(false));
-  expect(other).toContain("5/100");
+  expect(other).toContain("10/100");
   expect(other).toContain("the quip");
   expect(other).not.toContain("fix list");
 

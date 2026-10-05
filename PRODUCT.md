@@ -32,7 +32,8 @@ Cut on purpose: big-bang commit (squash merges make it noisy), star quality (bou
 
 ## Archetypes
 
-- Score under 20: **Real One**
+- Score under 20 with at least one credit (tests or merged PRs): **Real One**
+- Score under 20 with no credits: **Unproven** (nothing contradicted, nothing proven)
 - Fewer than 3 non-fork repos, or account under 30 days old: **NPC** (no score)
 - Otherwise use the top group. If the second group is at least 60% of the top one, use the combo name instead.
 
@@ -73,7 +74,8 @@ Local commits only until v1 is done. Publish after.
 
 Steps 1-9 done. Step 10 (publish) not started.
 
-- Calibration: 29/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). The one miss, pavsap, comes out Portfolio Speedrunner because their Tutorial signals reach 75% of Farmer.
+- Real-world pass (2026-10-05): 60 profiles. 17 working devs (contributors ranked 15 to 30 on next.js, react, deno, ruff, tailwind, django): all Real One or NPC. 10 "AI founder"-style bios: all Real One after fixes. 27 clone/hype repo owners: 10 Unproven, 2 Tutorial Graduate, rest Real One with real tests or PRs. Owners of LLM-wrapper repos: Wrapper Founder, 50/100. Fixes from it: fork padding needs half the profile, self-declared SDKs/wrappers skip signal 2, template tests and CI-only no longer earn P1, template weight 15 -> 20, Unproven archetype.
+- Calibration: 28/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). Both misses (pavsap, xtropi) come out Portfolio Speedrunner: they also have template repos, so Tutorial reaches 60%+ of Farmer.
 - What calibration changed: signal 8 as first written (author vs committer date) caught almost no painters, because painting scripts set both dates. It now checks dates against the repo's creation date and needs a scripted pattern. Version-bump runs are excluded.
 - Wrapper and Tutorial archetypes have no public fixtures yet (by design, they go in `fixtures.local.json`). Nick's own profile still needs a label there.
 - Budget: a fresh profile scan is 22-29 API calls and 4-9 seconds. Most of that is GraphQL, with the commit batches in parallel.

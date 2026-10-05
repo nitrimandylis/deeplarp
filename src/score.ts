@@ -6,7 +6,7 @@ import type { Group, Signal } from "./scan";
 const WEIGHTS: Record<string, number> = {
   "1:suspicious": 15,
   "2:contradicted": 35,
-  "4:suspicious": 15,
+  "4:suspicious": 20,
   "4:contradicted": 30,
   "5:contradicted": 30,
   "7:suspicious": 15,
@@ -100,8 +100,10 @@ const SINGLES: Record<Group, string> = {
   Farmer: "Contribution Farmer",
 };
 
-export function archetypeFor(score: number, groups: Record<Group, number>): string {
-  if (score < REAL_ONE_BELOW) return "Real One";
+// A low score only earns "Real One" with positive evidence (tests or merged PRs).
+// Without any, a low score just means there was nothing to check either way.
+export function archetypeFor(score: number, groups: Record<Group, number>, hasCredit: boolean): string {
+  if (score < REAL_ONE_BELOW) return hasCredit ? "Real One" : "Unproven";
 
   const ranked = (Object.keys(groups) as Group[]).sort((a, b) => groups[b] - groups[a]);
   const top = ranked[0]!;
@@ -138,7 +140,8 @@ export function scoreSignals(signals: Signal[], npc = false): Score {
     capped = true;
   }
 
-  return { score, capped, archetype: archetypeFor(score, groups), groups, signals: scored };
+  const hasCredit = scored.some((s) => s.tier === "credit");
+  return { score, capped, archetype: archetypeFor(score, groups, hasCredit), groups, signals: scored };
 }
 
 // --- quips: first matching rule wins, most surprising first ---
@@ -152,6 +155,7 @@ function find(s: Score, id: string): ScoredSignal | undefined {
 const QUIPS: QuipRule[] = [
   { when: (s) => s.archetype === "NPC", line: () => "Not enough here to larp with yet." },
   { when: (s) => s.archetype === "Real One", line: () => "The claims check out. Nothing to roast, which is the point." },
+  { when: (s) => s.archetype === "Unproven", line: () => "Nothing contradicted, nothing proven. A blank page with a commit history." },
   {
     when: (s) => find(s, "5") !== undefined,
     line: (s) => `The README says ${find(s, "5")!.detail}. The code didn't get the memo.`,

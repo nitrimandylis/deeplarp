@@ -30,7 +30,7 @@ function el(style: Record<string, unknown>, ...children: (El | string)[]): El {
 }
 
 function scoreColor(report: Report): string {
-  if (report.score === null) return COLORS.muted;
+  if (report.score === null || report.archetype === "Unproven") return COLORS.muted;
   if (report.score >= 75) return COLORS.hot;
   if (report.score >= 20) return COLORS.warm;
   return COLORS.cool;
