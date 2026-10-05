@@ -44,9 +44,9 @@ export function cardLayout(report: Report): El {
   const receipts = report.signals.slice(0, 4).map((s) =>
     el(
       { gap: 12, fontSize: 20, color: COLORS.text },
-      el({ color: s.tier === "credit" ? COLORS.cool : scoreColor(report), width: 140, flexShrink: 0 }, s.tier),
+      el({ color: s.tier === "credit" ? COLORS.cool : scoreColor(report), width: 160, flexShrink: 0 }, s.tier),
       // "owner/repo: text" -> "repo: text" to save width
-      shorten(s.receipts[0]!.replace(/^[^/:]+\//, ""), 72),
+      shorten(s.receipts[0]!.replace(/^[^/:]+\//, ""), 70),
     ),
   );
 

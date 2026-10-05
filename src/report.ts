@@ -93,7 +93,7 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
     repos = await Promise.all(pickRepos(profile).map((name) => fetchRepo(name, fresh)));
     for (const repo of repos) signals.push(...scanRepo(repo));
 
-    const profileSignals = [forkPadding(profile), backdatedCommits(profile.login, repos), mergedPrs(profile)];
+    const profileSignals = [forkPadding(profile), backdatedCommits(profile), mergedPrs(profile)];
     for (const s of profileSignals) if (s) signals.push(s);
 
     claimSources = [profile.bio ?? "", ...repos.map((r) => r.description ?? ""), ...repos.map((r) => r.readme)];

@@ -9,7 +9,7 @@ const API = "https://api.github.com";
 const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
 // Bump when RepoData or ProfileData changes shape, so old cache files get refetched.
-const CACHE_VERSION = 2;
+const CACHE_VERSION = 3;
 // Root files read for dependency names. Only fetched when present in the tree.
 const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml"];
 
@@ -186,6 +186,7 @@ export type ProfileRepo = {
   stars: number;
   createdAt: string;
   pushedAt: string;
+  commits: Commit[]; // newest first, up to COMMITS_PER_REPO on the default branch
 };
 
 export type ProfileData = {
@@ -212,20 +213,68 @@ query($login: String!, $prQuery: String!) {
   search(query: $prQuery, type: ISSUE) { issueCount }
 }`;
 
-async function ghGraphql(query: string, variables: Record<string, string>): Promise<any> {
+// Recent commits for every non-fork repo. Asking for all 100 repos' history in one
+// query times out (502) on big accounts, so it goes out as parallel batches of 25,
+// one aliased `repository(...)` field per repo.
+const COMMITS_PER_REPO = 10;
+const REPOS_PER_BATCH = 25;
+
+export function commitsQuery(fullNames: string[]): string {
+  const fields = fullNames.map((fullName, i) => {
+    const [owner, name] = fullName.split("/");
+    return `r${i}: repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
+      defaultBranchRef { target { ... on Commit {
+        history(first: ${COMMITS_PER_REPO}) {
+          nodes { oid messageHeadline authoredDate committedDate author { user { login } } }
+        }
+      } } }
+    }`;
+  });
+  return `query {\n${fields.join("\n")}\n}`;
+}
+
+async function ghGraphql(query: string, variables: Record<string, string | null>, retries = 1): Promise<any> {
   apiCalls++;
   const res = await fetch(API + "/graphql", {
     method: "POST",
     headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
     body: JSON.stringify({ query, variables }),
   });
+  // 502/504 here means the query timed out on GitHub's side; one retry usually lands.
+  if ((res.status === 502 || res.status === 504) && retries > 0) return ghGraphql(query, variables, retries - 1);
   if (!res.ok) throw new Error(`GitHub GraphQL ${res.status}`);
   const body = await res.json();
-  if (body.errors && !body.data?.user) throw new Error(body.errors[0].message);
+  // Partial errors (one unreadable repo in a batch) still return data; only fail on none.
+  if (body.errors && !body.data) throw new Error(body.errors[0].message);
   return body.data;
 }
 
-// One GraphQL call covers the whole profile: bio, pinned, repo list and merged PR count.
+async function fetchCommitsByRepo(fullNames: string[]): Promise<Map<string, Commit[]>> {
+  const batches: string[][] = [];
+  for (let i = 0; i < fullNames.length; i += REPOS_PER_BATCH) {
+    batches.push(fullNames.slice(i, i + REPOS_PER_BATCH));
+  }
+  const results = await Promise.all(batches.map((batch) => ghGraphql(commitsQuery(batch), {})));
+
+  const byRepo = new Map<string, Commit[]>();
+  batches.forEach((batch, b) => {
+    batch.forEach((fullName, i) => {
+      // Empty repos have no default branch, so no history.
+      const nodes = results[b][`r${i}`]?.defaultBranchRef?.target?.history?.nodes ?? [];
+      byRepo.set(fullName, nodes.map((c: any) => ({
+        sha: c.oid,
+        authorLogin: c.author?.user?.login ?? null,
+        message: c.messageHeadline,
+        authorDate: c.authoredDate,
+        committerDate: c.committedDate,
+      })));
+    });
+  });
+  return byRepo;
+}
+
+// The whole profile in two rounds of GraphQL: bio, pinned, repo list and merged PR
+// count first, then 1-4 parallel batches of recent commits.
 export async function fetchProfile(login: string, fresh = false): Promise<ProfileData> {
   const key = "user/" + login.toLowerCase();
   if (!fresh) {
@@ -237,6 +286,8 @@ export async function fetchProfile(login: string, fresh = false): Promise<Profil
   const data = await ghGraphql(PROFILE_QUERY, { login, prQuery });
   const user = data.user;
   if (!user) throw new Error(`Not a GitHub user: ${login}`);
+  const ownRepos = user.repositories.nodes.filter((n: any) => !n.isFork).map((n: any) => n.nameWithOwner);
+  const commits = await fetchCommitsByRepo(ownRepos);
 
   const profile: ProfileData = {
     version: CACHE_VERSION,
@@ -251,6 +302,7 @@ export async function fetchProfile(login: string, fresh = false): Promise<Profil
       stars: n.stargazerCount,
       createdAt: n.createdAt,
       pushedAt: n.pushedAt,
+      commits: commits.get(n.nameWithOwner) ?? [],
     })),
     mergedPrsElsewhere: data.search.issueCount,
     fetchedAt: new Date().toISOString(),

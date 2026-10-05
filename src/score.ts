@@ -11,6 +11,7 @@ const WEIGHTS: Record<string, number> = {
   "5:contradicted": 30,
   "7:suspicious": 15,
   "8:suspicious": 20,
+  "8:contradicted": 40,
   "P1:credit": -10,
   "P2:credit": -15,
 };
@@ -18,6 +19,10 @@ const WEIGHTS: Record<string, number> = {
 // The same signal on more repos adds a little, not the full weight again.
 const EXTRA_PER_REPO = 5;
 const MAX_EXTRAS = 2;
+
+// Credits lower the score but can't launder a contradiction: tests in one repo don't
+// undo a painted graph in another. Total credit is floored at this.
+export const MAX_CREDIT = -20;
 
 // Suspicion alone can't reach the top band. It needs at least one contradicted signal.
 export const SUSPICION_CAP = 74;
@@ -112,10 +117,16 @@ export function scoreSignals(signals: Signal[], npc = false): Score {
   const scored = combine(signals);
   const groups: Record<Group, number> = { Wrapper: 0, Tutorial: 0, Farmer: 0 };
   let total = 0;
+  let credit = 0;
   for (const s of scored) {
-    total += s.points;
-    if (s.group !== "credit") groups[s.group] += s.points;
+    if (s.group === "credit") {
+      credit += s.points;
+    } else {
+      total += s.points;
+      groups[s.group] += s.points;
+    }
   }
+  total += Math.max(credit, MAX_CREDIT);
 
   if (npc) return { score: null, capped: false, archetype: "NPC", groups, signals: scored };
 
@@ -155,7 +166,10 @@ const QUIPS: QuipRule[] = [
   },
   {
     when: (s) => find(s, "8") !== undefined,
-    line: (s) => `Some commits were written ${find(s, "8")!.detail} days before they were committed. Bold use of --date.`,
+    line: (s) =>
+      find(s, "8")!.tier === "contradicted"
+        ? "Commits from before the repo existed. Bold use of --date."
+        : "Author dates a month older than the commits. Bold use of --date.",
   },
   {
     when: (s) => find(s, "7") !== undefined,

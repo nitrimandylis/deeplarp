@@ -22,9 +22,11 @@ Decided in a grill session on 2026-10-05.
 | 4 | Template fingerprint (create-next-app/Vite defaults, tutorial names) | Tutorial | suspicious, contradicted if it claims "from scratch" |
 | 5 | Claimed stack vs GitHub language breakdown | Wrapper | contradicted |
 | 7 | Fork padding: forks with zero own commits | Farmer | suspicious |
-| 8 | Backdated commits: author date far from committer date | Farmer | suspicious |
+| 8 | Backdated commits: scripted-looking runs (one repeated message or one clock time) dated before their repo existed, or with author dates 30+ days before the commit | Farmer | contradicted if before the repo existed, else suspicious |
 | P1 | Tests and CI exist | credit | subtracts |
 | P2 | Merged PRs to other people's repos | credit | subtracts |
+
+Credits are floored at -20 in total, so tests and PRs can't erase a contradiction.
 
 Cut on purpose: big-bang commit (squash merges make it noisy), star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).
 
@@ -66,6 +68,15 @@ Bun + TypeScript. Plain `fetch` for GitHub REST and GraphQL. Token from `gh auth
 10. Publish (GitHub public + npm via OIDC)
 
 Local commits only until v1 is done. Publish after.
+
+## Status (2026-10-05)
+
+Steps 1-9 done. Step 10 (publish) not started.
+
+- Calibration: 29/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). The one miss, pavsap, comes out Portfolio Speedrunner because their Tutorial signals reach 75% of Farmer.
+- What calibration changed: signal 8 as first written (author vs committer date) caught almost no painters, because painting scripts set both dates. It now checks dates against the repo's creation date and needs a scripted pattern. Version-bump runs are excluded.
+- Wrapper and Tutorial archetypes have no public fixtures yet (by design, they go in `fixtures.local.json`). Nick's own profile still needs a label there.
+- Budget: a fresh profile scan is 22-29 API calls and 4-9 seconds. Most of that is GraphQL, with the commit batches in parallel.
 
 ## Landscape
 

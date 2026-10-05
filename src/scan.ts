@@ -1,7 +1,7 @@
 // Repo scanner: turns one RepoData into the signals that fired, each with a receipt.
 // Pure functions only. Weights and the final score live in the scoring step.
 
-import type { RepoData, ProfileData } from "./gh";
+import type { RepoData, ProfileData, Commit } from "./gh";
 
 export type Group = "Wrapper" | "Tutorial" | "Farmer";
 
@@ -191,7 +191,8 @@ const LANGUAGES: Record<string, string[]> = {
   java: ["Java"], kotlin: ["Kotlin"], swift: ["Swift"], zig: ["Zig"], haskell: ["Haskell"],
   elixir: ["Elixir"], ruby: ["Ruby"], scala: ["Scala"], ocaml: ["OCaml"], julia: ["Julia"], dart: ["Dart"],
 };
-const STACK_CLAIM = /\b(?:built|written|made|implemented|coded)\s+(?:entirely\s+|purely\s+|from scratch\s+)?(?:in|with)\s+(?:pure\s+)?([A-Za-z]+[+#]*)/gi;
+// The language word must end at whitespace or punctuation, so "c⁺⁺" isn't read as "c".
+const STACK_CLAIM = /\b(?:built|written|made|implemented|coded)\s+(?:entirely\s+|purely\s+|from scratch\s+)?(?:in|with)\s+(?:pure\s+)?([A-Za-z]+[+#]*)(?=[\s.,;:!?)\]]|$)/gi;
 const MIN_SHARE = 0.1;
 
 export function claimedLanguages(text: string): string[] {
@@ -207,23 +208,27 @@ export function stackMismatch(repo: RepoData): Signal | null {
   const total = Object.values(repo.languages).reduce((sum, bytes) => sum + bytes, 0);
   if (total === 0) return null;
 
-  for (const claim of claimedLanguages(claimText(repo))) {
+  const claims = claimedLanguages(claimText(repo));
+  if (claims.length === 0) return null;
+
+  // Any claimed language that really is there clears the repo: a README that says
+  // "written in Rust" and mentions an old C++ version isn't lying about Rust.
+  const shares = claims.map((claim) => {
     let bytes = 0;
     for (const lang of LANGUAGES[claim]!) bytes += repo.languages[lang] ?? 0;
-    const share = bytes / total;
-    if (share >= MIN_SHARE) continue;
+    return bytes / total;
+  });
+  if (shares.some((share) => share >= MIN_SHARE)) return null;
 
-    const actual = Object.entries(repo.languages).sort((a, b) => b[1] - a[1])[0]![0];
-    return {
-      id: "5",
-      where: repo.fullName,
-      group: "Wrapper",
-      tier: "contradicted",
-      receipt: `claims ${claim}, GitHub counts ${Math.round(share * 100)}% (mostly ${actual})`,
-      detail: claim,
-    };
-  }
-  return null;
+  const actual = Object.entries(repo.languages).sort((a, b) => b[1] - a[1])[0]![0];
+  return {
+    id: "5",
+    where: repo.fullName,
+    group: "Wrapper",
+    tier: "contradicted",
+    receipt: `claims ${claims[0]}, GitHub counts ${Math.round(shares[0]! * 100)}% (mostly ${actual})`,
+    detail: claims[0],
+  };
 }
 
 // --- P1: tests and CI ---
@@ -262,6 +267,7 @@ export function regexClaims(text: string): string[] {
 
 // --- profile signals: 7, 8, P2 ---
 
+
 const MIN_EMPTY_FORKS = 3;
 
 // ponytail: a fork whose pushedAt is not after its createdAt never got a push of its own.
@@ -280,39 +286,88 @@ export function forkPadding(profile: ProfileData): Signal | null {
   };
 }
 
-const BACKDATE_DAYS = 30;
+const REWRITE_DAYS = 30; // author date this far before the commit date = `git commit --date`
+const PREHISTORIC_DAYS = 1; // commits this far before the repo was created
 const BACKDATE_MIN_COMMITS = 5;
-const BACKDATE_MIN_SHARE = 0.25;
+const BACKDATE_MIN_SHARE = 0.5; // of the repo's sampled commits by this user
+const REPEAT_MIN_SHARE = 0.5; // of the backdated commits sharing a message or a clock time
 
-// `git commit --date` moves the author date only. A month or more between author and
-// committer date, on a quarter of someone's own commits, looks like graph painting.
-export function backdatedCommits(login: string, repos: RepoData[]): Signal | null {
-  let own = 0;
-  let backdated = 0;
-  let worstDays = 0;
+function daysBetween(earlier: string, later: string): number {
+  return (new Date(later).getTime() - new Date(earlier).getTime()) / 86_400_000;
+}
 
-  for (const repo of repos) {
-    for (const commit of repo.commits) {
-      if (commit.authorLogin?.toLowerCase() !== login.toLowerCase()) continue;
-      own++;
-      const days = (new Date(commit.committerDate).getTime() - new Date(commit.authorDate).getTime()) / 86_400_000;
-      if (Math.abs(days) >= BACKDATE_DAYS) {
-        backdated++;
-        worstDays = Math.max(worstDays, Math.round(Math.abs(days)));
-      }
+// Share of the most common value in a list, plus that value.
+export function topShare(values: string[]): { value: string; share: number } {
+  const counts = new Map<string, number>();
+  for (const v of values) counts.set(v, (counts.get(v) ?? 0) + 1);
+  let best = "";
+  let bestCount = 0;
+  for (const [value, count] of counts) {
+    if (count > bestCount) {
+      best = value;
+      bestCount = count;
     }
   }
+  return { value: best, share: values.length === 0 ? 0 : bestCount / values.length };
+}
 
-  if (backdated < BACKDATE_MIN_COMMITS) return null;
-  if (backdated / own < BACKDATE_MIN_SHARE) return null;
+// Release commits ("-> v1.2.3") keep their digits: a run of version bumps isn't a script.
+const VERSION = /\d+\.\d+\.\d+/;
 
+function normaliseMessage(message: string): string {
+  const lower = message.toLowerCase().trim();
+  return VERSION.test(lower) ? lower : lower.replace(/\d+/g, "");
+}
+
+// Painting scripts reuse one message ("paint", "gitfiti", "commit 00862"), with digits
+// stripped so numbered messages match, or commit every day at one clock time (23:00:00).
+// Real history that was pushed late has neither.
+export function looksScripted(commits: Commit[]): { message: string; scripted: boolean } {
+  const messages = topShare(commits.map((c) => normaliseMessage(c.message)));
+  const clockTimes = topShare(commits.map((c) => c.authorDate.slice(11, 19)));
+  return {
+    message: messages.value,
+    scripted: messages.share >= REPEAT_MIN_SHARE || clockTimes.share >= REPEAT_MIN_SHARE,
+  };
+}
+
+// Backdated = authored a month before it was committed (`git commit --date`), or dated
+// before its repo existed (both dates set). Only scripted-looking runs count.
+// Commits from before the repo existed contradict the graph outright; rewrites are suspicious.
+export function backdatedCommits(profile: ProfileData): Signal | null {
+  const painted: string[] = [];
+  let total = 0;
+  let prehistoric = false;
+  let message = "";
+
+  for (const repo of profile.repos) {
+    if (repo.isFork) continue;
+    const own = repo.commits.filter((c) => c.authorLogin?.toLowerCase() === profile.login.toLowerCase());
+    const before = own.filter((c) => daysBetween(c.authorDate, repo.createdAt) >= PREHISTORIC_DAYS);
+    const rewritten = own.filter((c) => daysBetween(c.authorDate, c.committerDate) >= REWRITE_DAYS);
+    const backdated = own.filter((c) => before.includes(c) || rewritten.includes(c));
+
+    if (backdated.length < BACKDATE_MIN_COMMITS) continue;
+    if (backdated.length / own.length < BACKDATE_MIN_SHARE) continue;
+    const pattern = looksScripted(backdated);
+    if (!pattern.scripted) continue;
+
+    painted.push(repo.fullName.split("/")[1]!);
+    total += backdated.length;
+    if (before.length >= BACKDATE_MIN_COMMITS) prehistoric = true;
+    if (!message) message = pattern.message;
+  }
+
+  if (painted.length === 0) return null;
+  const quoted = message === "" ? "an empty message" : `"${message}"`;
+  const what = prehistoric ? "dated before their repo existed" : "with author dates a month or more before the commit";
   return {
     id: "8",
     group: "Farmer",
-    tier: "suspicious",
-    where: login,
-    receipt: `${backdated} of ${own} commits have author and commit dates ${BACKDATE_DAYS}+ days apart (worst: ${worstDays} days)`,
-    detail: String(worstDays),
+    tier: prehistoric ? "contradicted" : "suspicious",
+    where: profile.login,
+    receipt: `${total} scripted commits ${what} (mostly ${quoted}), in ${painted.join(", ")}`,
+    detail: String(painted.length),
   };
 }
 

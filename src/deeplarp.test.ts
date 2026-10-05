@@ -2,10 +2,10 @@
 // Run with `bun test`.
 
 import { test, expect } from "bun:test";
-import { isFresh, type RepoData, type ProfileData, type Commit } from "./gh";
+import { isFresh, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
 import {
   scanRepo, logicLines, claimedLanguages, llmDependencies, regexClaims,
-  forkPadding, backdatedCommits, mergedPrs, type Signal,
+  forkPadding, backdatedCommits, looksScripted, mergedPrs, type Signal,
 } from "./scan";
 import { scoreSignals, archetypeFor, quipFor, fixesFor, SUSPICION_CAP } from "./score";
 import { pickRepos, npcReason, type Report } from "./report";
@@ -47,6 +47,10 @@ function profile(overrides: Partial<ProfileData> = {}): ProfileData {
     fetchedAt: "2026-10-05T00:00:00Z",
     ...overrides,
   };
+}
+
+function profileRepo(overrides: Partial<ProfileRepo> = {}): ProfileRepo {
+  return { fullName: "someone/r", isFork: false, stars: 0, createdAt: "2026-01-01T00:00:00Z", pushedAt: "2026-01-01T00:00:00Z", commits: [], ...overrides };
 }
 
 function signal(id: string, tier: Signal["tier"], group: Signal["group"], where = "someone/thing"): Signal {
@@ -118,6 +122,11 @@ test("tests or CI give the P1 credit", () => {
 test("stack claims only count real languages", () => {
   expect(claimedLanguages("Written in pure C++ and built with React")).toEqual(["c++"]);
   expect(claimedLanguages("made with TypeScript")).toEqual(["typescript"]);
+  expect(claimedLanguages("first written in c⁺⁺ [Angle]")).toEqual([]);
+});
+
+test("one real claimed language clears the repo", () => {
+  expect(scanRepo(repo({ readme: "Written in Rust. The old version was written in C++.", languages: { Rust: 1000 } }))).toEqual([]);
 });
 
 test("JavaScript and TypeScript satisfy each other", () => {
@@ -140,25 +149,42 @@ test("regex claims pick up big words, languages and from scratch", () => {
 // --- profile signals ---
 
 test("fork padding needs 3 forks that never got a push", () => {
-  const emptyFork = { fullName: "someone/f", isFork: true, stars: 0, createdAt: "2026-02-01T00:00:00Z", pushedAt: "2026-01-01T00:00:00Z" };
+  const emptyFork = profileRepo({ isFork: true, createdAt: "2026-02-01T00:00:00Z", pushedAt: "2026-01-01T00:00:00Z" });
   const usedFork = { ...emptyFork, pushedAt: "2026-03-01T00:00:00Z" };
   expect(forkPadding(profile({ repos: [emptyFork, emptyFork, usedFork] }))).toBeNull();
   expect(forkPadding(profile({ repos: [emptyFork, emptyFork, emptyFork] }))?.detail).toBe("3");
 });
 
-test("backdated commits only count the user's own, and need a quarter of them", () => {
-  const backdated: Commit = { sha: "a", authorLogin: "someone", message: "", authorDate: "2025-01-01T00:00:00Z", committerDate: "2026-01-01T00:00:00Z" };
-  const normal: Commit = { ...backdated, authorDate: "2026-01-01T00:00:00Z" };
-  const someoneElse: Commit = { ...backdated, authorLogin: "other" };
+test("scripted commits: repeated messages or one clock time, but not version bumps", () => {
+  const c = (message: string, time: string): Commit =>
+    ({ sha: "a", authorLogin: "someone", message, authorDate: `2024-01-01T${time}Z`, committerDate: `2024-01-01T${time}Z` });
+  expect(looksScripted([c("Draw art 00862", "01:00:00"), c("Draw art 00863", "02:00:00")]).scripted).toBe(true);
+  expect(looksScripted([c("Wed Sep 18", "23:00:00"), c("Thu Sep 19", "23:00:00")]).scripted).toBe(true);
+  expect(looksScripted([c("-> v1.0.1", "01:00:00"), c("-> v1.0.2", "02:00:00"), c("-> v1.1.0", "03:00:00")]).scripted).toBe(false);
+});
 
-  const painted = repo({ commits: [...Array(5).fill(backdated), ...Array(5).fill(normal)] });
-  expect(backdatedCommits("someone", [painted])?.detail).toBe("365");
+test("backdated commits: painted repos fire, old local history and rebases don't", () => {
+  const at = (date: string, message: string, committed = date): Commit =>
+    ({ sha: "a", authorLogin: "someone", message, authorDate: date, committerDate: committed });
 
-  const mostlyReal = repo({ commits: [...Array(5).fill(backdated), ...Array(20).fill(normal)] });
-  expect(backdatedCommits("someone", [mostlyReal])).toBeNull();
+  // Both dates set to 2024, repo created in 2026, one repeated message: a painted graph.
+  const painted = profileRepo({ fullName: "someone/art", commits: Array(10).fill(at("2024-03-01T00:00:00Z", "paint")) });
+  const signal8 = backdatedCommits(profile({ repos: [painted] }));
+  expect(signal8?.tier).toBe("contradicted");
+  expect(signal8?.receipt).toBe('10 scripted commits dated before their repo existed (mostly "paint"), in art');
 
-  const notTheirs = repo({ commits: Array(10).fill(someoneElse) });
-  expect(backdatedCommits("someone", [notTheirs])).toBeNull();
+  // `git commit --date` in a repo created first: author date a year before the commit date.
+  const dated = profileRepo({ createdAt: "2024-01-01T00:00:00Z", commits: Array(6).fill(at("2025-01-01T00:00:00Z", "commit", "2026-02-01T00:00:00Z")) });
+  expect(backdatedCommits(profile({ repos: [dated] }))?.tier).toBe("suspicious");
+
+  // A real project pushed months after `git init`: old dates, varied messages.
+  const times = ["09:12:01", "11:40:22", "14:03:59", "16:30:10", "18:45:33", "21:02:07"];
+  const imported = profileRepo({ commits: ["init", "add parser", "fix tests", "docs", "refactor", "v1"].map((m, i) => at(`2025-06-0${i + 1}T${times[i]}Z`, m)) });
+  expect(backdatedCommits(profile({ repos: [imported] }))).toBeNull();
+
+  // Someone else's painted commits don't count.
+  const notTheirs = profileRepo({ commits: Array(10).fill({ ...at("2024-03-01T00:00:00Z", "paint"), authorLogin: "other" }) });
+  expect(backdatedCommits(profile({ repos: [notTheirs] }))).toBeNull();
 });
 
 test("merged PRs elsewhere give the P2 credit", () => {
@@ -191,6 +217,12 @@ test("repeats add 5 per extra repo, at most 2 extras, at the strongest tier", ()
   expect(s.signals[0]!.tier).toBe("contradicted");
   expect(s.signals[0]!.points).toBe(40);
   expect(s.signals[0]!.receipts.length).toBe(4);
+});
+
+test("credits are floored at -20 so they can't erase a contradiction", () => {
+  const s = scoreSignals([signal("8", "contradicted", "Farmer"), signal("P1", "credit", "credit"), signal("P1", "credit", "credit", "a/2"), signal("P2", "credit", "credit")]);
+  expect(s.score).toBe(20);
+  expect(s.archetype).toBe("Contribution Farmer");
 });
 
 test("credits subtract and the score never goes below 0", () => {
@@ -232,7 +264,7 @@ test("fix list is ordered by points and includes missing credits", () => {
 // --- report ---
 
 test("repo pick: pinned first, then top 3 by stars, no forks, max 4", () => {
-  const r = (name: string, isFork = false) => ({ fullName: name, isFork, stars: 0, createdAt: "", pushedAt: "" });
+  const r = (name: string, isFork = false) => profileRepo({ fullName: name, isFork });
   const p = profile({
     pinned: ["u/pin", "u/fork"],
     repos: [r("u/fork", true), r("u/a"), r("u/pin"), r("u/b"), r("u/c")],
@@ -241,7 +273,7 @@ test("repo pick: pinned first, then top 3 by stars, no forks, max 4", () => {
 });
 
 test("NPC: under 3 own repos or account under 30 days", () => {
-  const r = (isFork: boolean) => ({ fullName: "u/x", isFork, stars: 0, createdAt: "", pushedAt: "" });
+  const r = (isFork: boolean) => profileRepo({ isFork });
   const now = new Date("2026-10-05T00:00:00Z");
   expect(npcReason(profile({ repos: [r(false), r(false), r(true)] }), now)).toBe("only 2 non-fork repos");
   expect(npcReason(profile({ repos: [r(false), r(false), r(false)], createdAt: "2026-09-25T00:00:00Z" }), now)).toBe("account is 10 days old");
