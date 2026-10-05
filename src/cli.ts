@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
-// Milestone 1: fetch one repo and print what was pulled. Scanners come next.
+// Milestone 2: fetch one repo and print the signals that fired. Scoring comes next.
 
 import { parseArgs } from "node:util";
 import { fetchRepo, apiCalls } from "./gh";
+import { scanRepo, logicLines, wordCount } from "./scan";
 
 const { values, positionals } = parseArgs({
   args: Bun.argv.slice(2),
@@ -20,14 +21,21 @@ if (!target || !target.includes("/")) {
 
 try {
   const repo = await fetchRepo(target, values.fresh);
-  const readmeWords = repo.readme.split(/\s+/).filter((w) => w.length > 0).length;
 
   console.log(`${repo.fullName}  ${repo.isFork ? "(fork)" : ""}`);
   console.log(`  files      ${repo.files.length}${repo.treeTruncated ? " (tree truncated)" : ""}`);
-  console.log(`  readme     ${readmeWords} words`);
+  console.log(`  readme     ${wordCount(repo.readme)} words`);
+  console.log(`  code       about ${logicLines(repo)} lines`);
   console.log(`  languages  ${Object.keys(repo.languages).join(", ") || "none"}`);
   console.log(`  commits    ${repo.commits.length} fetched`);
+  console.log(`  manifests  ${Object.keys(repo.manifests).join(", ") || "none"}`);
   console.log(`  api calls  ${apiCalls}${apiCalls === 0 ? " (cached)" : ""}`);
+
+  const signals = scanRepo(repo);
+  console.log(signals.length === 0 ? "\n  no signals" : "");
+  for (const s of signals) {
+    console.log(`  [${s.id}] ${s.tier.padEnd(12)} ${s.receipt}`);
+  }
 } catch (err) {
   console.error((err as Error).message);
   process.exit(1);

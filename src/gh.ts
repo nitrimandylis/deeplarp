@@ -8,6 +8,8 @@ import { join } from "node:path";
 const API = "https://api.github.com";
 const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
+// Root files read for dependency names. Only fetched when present in the tree.
+const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml"];
 
 export type TreeFile = { path: string; size: number };
 
@@ -31,6 +33,7 @@ export type RepoData = {
   readme: string; // empty string when the repo has no README
   languages: Record<string, number>; // language -> bytes
   commits: Commit[]; // newest first, up to 100
+  manifests: Record<string, string>; // root manifest path -> file text
   fetchedAt: string;
 };
 
@@ -92,6 +95,8 @@ function readCache(fullName: string): RepoData | null {
   const file = cachePath(fullName);
   if (!existsSync(file)) return null;
   const data: RepoData = JSON.parse(readFileSync(file, "utf8"));
+  // Caches written before a field existed are treated as stale.
+  if (!data.manifests) return null;
   return isFresh(data.fetchedAt) ? data : null;
 }
 
@@ -141,6 +146,13 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     }
   }
 
+  const manifests: Record<string, string> = {};
+  for (const name of MANIFESTS) {
+    if (!files.some((f) => f.path === name)) continue;
+    const res = await ghGet(`/repos/${fullName}/contents/${name}`, "application/vnd.github.raw+json");
+    if (res.ok) manifests[name] = await res.text();
+  }
+
   const data: RepoData = {
     fullName: meta.full_name,
     description: meta.description,
@@ -154,6 +166,7 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     readme,
     languages,
     commits,
+    manifests,
     fetchedAt: new Date().toISOString(),
   };
   writeCache(data);
