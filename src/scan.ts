@@ -81,7 +81,11 @@ const LLM_SDKS_PY = [
   "openai", "anthropic", "langchain", "google-generativeai", "google-genai", "groq",
   "ollama", "llama-index", "litellm", "cohere", "mistralai",
 ];
-const BIG_CLAIM = /\b(AI[- ]powered|autonomous|agentic|agents?|engine|framework|intelligent|platform)\b/i;
+// (?<!-) skips "cross-platform", "multi-agent" style compounds.
+const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|agents?|engine|framework|intelligent|platform)\b/i;
+// A repo that calls itself a wrapper is being honest about it.
+const SELF_DECLARED_WRAPPER = /\b(wrapper|sdk|client library|api client|bindings|proxy)\b/i;
+const SELF_DECLARED_CHARS = 1000;
 const WRAPPER_MAX_LINES = 1500;
 
 export function llmDependencies(repo: RepoData): string[] {
@@ -119,6 +123,9 @@ export function llmWrapper(repo: RepoData): Signal | null {
 
   const claim = claimText(repo).match(BIG_CLAIM);
   if (!claim) return null;
+  // Repo name counts too ("ai-special-sdk"). Dashes and underscores become spaces for \b.
+  const name = repo.fullName.split("/")[1]!.replace(/[-_]/g, " ");
+  if (SELF_DECLARED_WRAPPER.test(name + "\n" + claimText(repo).slice(0, SELF_DECLARED_CHARS))) return null;
 
   const lines = logicLines(repo);
   if (lines > WRAPPER_MAX_LINES) return null;
@@ -234,16 +241,21 @@ export function stackMismatch(repo: RepoData): Signal | null {
 // --- P1: tests and CI ---
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.go$|(^|\/)test_[^/]+\.py$|(^|\/)(tests?|__tests__|spec)\/)/;
+// Tests that scaffolding tools write for you (CRA, Angular CLI). They aren't evidence.
+const TEMPLATE_TEST = /(^|\/)(App\.test\.[jt]sx?|setupTests\.[jt]s|app\.component\.spec\.ts)$/;
+const MIN_TEST_FILES = 2;
 
+// Credit needs real test files. CI alone is often just a Pages deploy, so it only
+// shows up in the receipt next to tests.
 export function testsAndCi(repo: RepoData): Signal | null {
-  const tests = repo.files.filter((f) => TEST_FILE.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)));
-  const ci = repo.files.some((f) => f.path.startsWith(".github/workflows/"));
-  if (tests.length === 0 && !ci) return null;
+  const tests = repo.files.filter(
+    (f) => TEST_FILE.test(f.path) && !TEMPLATE_TEST.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)),
+  );
+  if (tests.length < MIN_TEST_FILES) return null;
 
-  const parts: string[] = [];
-  if (tests.length > 0) parts.push(`${tests.length} test files`);
-  if (ci) parts.push("CI workflows");
-  return { id: "P1", group: "credit", tier: "credit", where: repo.fullName, receipt: parts.join(" and ") };
+  const ci = repo.files.some((f) => f.path.startsWith(".github/workflows/"));
+  const receipt = `${tests.length} test files` + (ci ? " and CI workflows" : "");
+  return { id: "P1", group: "credit", tier: "credit", where: repo.fullName, receipt };
 }
 
 // --- entry point ---
@@ -268,13 +280,17 @@ export function regexClaims(text: string): string[] {
 // --- profile signals: 7, 8, P2 ---
 
 
-const MIN_EMPTY_FORKS = 3;
+// Real devs fork things to read or patch them. Padding is when empty forks are
+// most of the profile.
+const MIN_EMPTY_FORKS = 5;
+const MIN_EMPTY_FORK_SHARE = 0.5;
 
 // ponytail: a fork whose pushedAt is not after its createdAt never got a push of its own.
 // Costs zero API calls. Use the compare API per fork if this misses forks synced from upstream.
 export function forkPadding(profile: ProfileData): Signal | null {
   const empty = profile.repos.filter((r) => r.isFork && new Date(r.pushedAt) <= new Date(r.createdAt));
   if (empty.length < MIN_EMPTY_FORKS) return null;
+  if (empty.length / profile.repos.length < MIN_EMPTY_FORK_SHARE) return null;
 
   return {
     id: "7",

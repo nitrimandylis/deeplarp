@@ -112,11 +112,11 @@ test("one template file alone is not a fingerprint, the template README is", () 
   expect(ids(scanRepo(r))).toBe("4:suspicious");
 });
 
-test("tests or CI give the P1 credit", () => {
-  const r = repo({ files: [{ path: "src/a.test.ts", size: 10 }, { path: ".github/workflows/ci.yml", size: 10 }] });
-  const s = scanRepo(r);
-  expect(ids(s)).toBe("P1:credit");
-  expect(s[0]!.receipt).toBe("1 test files and CI workflows");
+test("P1 needs 2 real test files; template tests and CI alone don't count", () => {
+  const r = repo({ files: [{ path: "src/a.test.ts", size: 10 }, { path: "tests/b.py", size: 10 }, { path: ".github/workflows/ci.yml", size: 10 }] });
+  expect(scanRepo(r)[0]!.receipt).toBe("2 test files and CI workflows");
+  expect(scanRepo(repo({ files: [{ path: "src/App.test.js", size: 10 }, { path: "src/setupTests.js", size: 10 }] }))).toEqual([]);
+  expect(scanRepo(repo({ files: [{ path: ".github/workflows/pages.yml", size: 10 }] }))).toEqual([]);
 });
 
 test("stack claims only count real languages", () => {
@@ -148,11 +148,20 @@ test("regex claims pick up big words, languages and from scratch", () => {
 
 // --- profile signals ---
 
-test("fork padding needs 3 forks that never got a push", () => {
+test("fork padding needs 5 empty forks making up half the profile", () => {
   const emptyFork = profileRepo({ isFork: true, createdAt: "2026-02-01T00:00:00Z", pushedAt: "2026-01-01T00:00:00Z" });
-  const usedFork = { ...emptyFork, pushedAt: "2026-03-01T00:00:00Z" };
-  expect(forkPadding(profile({ repos: [emptyFork, emptyFork, usedFork] }))).toBeNull();
-  expect(forkPadding(profile({ repos: [emptyFork, emptyFork, emptyFork] }))?.detail).toBe("3");
+  const own = profileRepo();
+  expect(forkPadding(profile({ repos: [...Array(4).fill(emptyFork), own] }))).toBeNull();
+  expect(forkPadding(profile({ repos: [...Array(5).fill(emptyFork), ...Array(6).fill(own)] }))).toBeNull();
+  expect(forkPadding(profile({ repos: [...Array(5).fill(emptyFork), ...Array(5).fill(own)] }))?.detail).toBe("5");
+});
+
+test("self-declared wrappers and cross-platform aren't wrapper claims", () => {
+  const deps = { "package.json": JSON.stringify({ dependencies: { openai: "^4" } }) };
+  expect(scanRepo(repo({ description: "Unified SDK for the AI engine of your choice", manifests: deps }))).toEqual([]);
+  expect(scanRepo(repo({ description: "A cross-platform chat app", manifests: deps }))).toEqual([]);
+  expect(scanRepo(repo({ fullName: "u/ai-special-sdk", description: "AI Platform", manifests: deps }))).toEqual([]);
+  expect(ids(scanRepo(repo({ description: "An AI platform for chat", manifests: deps })))).toBe("2:contradicted");
 });
 
 test("scripted commits: repeated messages or one clock time, but not version bumps", () => {
