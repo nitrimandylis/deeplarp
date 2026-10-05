@@ -8,6 +8,8 @@ import { join } from "node:path";
 const API = "https://api.github.com";
 const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
+// Bump when RepoData or ProfileData changes shape, so old cache files get refetched.
+const CACHE_VERSION = 2;
 // Root files read for dependency names. Only fetched when present in the tree.
 const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml"];
 
@@ -15,12 +17,14 @@ export type TreeFile = { path: string; size: number };
 
 export type Commit = {
   sha: string;
+  authorLogin: string | null; // null when the commit email isn't linked to a GitHub account
   message: string;
   authorDate: string;
   committerDate: string;
 };
 
 export type RepoData = {
+  version: number;
   fullName: string;
   description: string | null;
   isFork: boolean;
@@ -82,8 +86,8 @@ async function ghJson(path: string): Promise<any> {
   return res.json();
 }
 
-function cachePath(fullName: string): string {
-  return join(CACHE_DIR, fullName.replace("/", "__") + ".json");
+function cachePath(key: string): string {
+  return join(CACHE_DIR, key.replace("/", "__") + ".json");
 }
 
 export function isFresh(fetchedAt: string, now: Date = new Date()): boolean {
@@ -91,23 +95,22 @@ export function isFresh(fetchedAt: string, now: Date = new Date()): boolean {
   return ageHours < CACHE_HOURS;
 }
 
-function readCache(fullName: string): RepoData | null {
-  const file = cachePath(fullName);
+function readCache<T extends { version: number; fetchedAt: string }>(key: string): T | null {
+  const file = cachePath(key);
   if (!existsSync(file)) return null;
-  const data: RepoData = JSON.parse(readFileSync(file, "utf8"));
-  // Caches written before a field existed are treated as stale.
-  if (!data.manifests) return null;
+  const data: T = JSON.parse(readFileSync(file, "utf8"));
+  if (data.version !== CACHE_VERSION) return null;
   return isFresh(data.fetchedAt) ? data : null;
 }
 
-function writeCache(data: RepoData): void {
+function writeCache(key: string, data: unknown): void {
   mkdirSync(CACHE_DIR, { recursive: true });
-  writeFileSync(cachePath(data.fullName), JSON.stringify(data, null, 2));
+  writeFileSync(cachePath(key), JSON.stringify(data, null, 2));
 }
 
 export async function fetchRepo(fullName: string, fresh = false): Promise<RepoData> {
   if (!fresh) {
-    const cached = readCache(fullName);
+    const cached = readCache<RepoData>(fullName);
     if (cached) return cached;
   }
 
@@ -139,6 +142,7 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     for (const c of raw) {
       commits.push({
         sha: c.sha,
+        authorLogin: c.author?.login ?? null,
         message: c.commit.message,
         authorDate: c.commit.author.date,
         committerDate: c.commit.committer.date,
@@ -154,6 +158,7 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
   }
 
   const data: RepoData = {
+    version: CACHE_VERSION,
     fullName: meta.full_name,
     description: meta.description,
     isFork: meta.fork,
@@ -169,14 +174,98 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     manifests,
     fetchedAt: new Date().toISOString(),
   };
-  writeCache(data);
+  writeCache(fullName, data);
   return data;
 }
 
-// Smallest runnable check: `bun src/gh.ts`
-if (import.meta.main) {
-  const now = new Date("2026-10-05T12:00:00Z");
-  console.assert(isFresh("2026-10-05T00:00:00Z", now) === true, "12h old should be fresh");
-  console.assert(isFresh("2026-10-04T11:00:00Z", now) === false, "25h old should be stale");
-  console.log("gh.ts checks passed");
+// --- profiles ---
+
+export type ProfileRepo = {
+  fullName: string;
+  isFork: boolean;
+  stars: number;
+  createdAt: string;
+  pushedAt: string;
+};
+
+export type ProfileData = {
+  version: number;
+  login: string;
+  name: string | null;
+  bio: string | null;
+  createdAt: string;
+  pinned: string[]; // full names, in pinned order
+  repos: ProfileRepo[]; // owned repos, most stars first, up to 100
+  mergedPrsElsewhere: number; // merged PRs into repos the user doesn't own
+  fetchedAt: string;
+};
+
+const PROFILE_QUERY = `
+query($login: String!, $prQuery: String!) {
+  user(login: $login) {
+    login name bio createdAt
+    pinnedItems(first: 6, types: REPOSITORY) { nodes { ... on Repository { nameWithOwner } } }
+    repositories(first: 100, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}) {
+      nodes { nameWithOwner isFork stargazerCount createdAt pushedAt }
+    }
+  }
+  search(query: $prQuery, type: ISSUE) { issueCount }
+}`;
+
+async function ghGraphql(query: string, variables: Record<string, string>): Promise<any> {
+  apiCalls++;
+  const res = await fetch(API + "/graphql", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${getToken()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ query, variables }),
+  });
+  if (!res.ok) throw new Error(`GitHub GraphQL ${res.status}`);
+  const body = await res.json();
+  if (body.errors && !body.data?.user) throw new Error(body.errors[0].message);
+  return body.data;
+}
+
+// One GraphQL call covers the whole profile: bio, pinned, repo list and merged PR count.
+export async function fetchProfile(login: string, fresh = false): Promise<ProfileData> {
+  const key = "user/" + login.toLowerCase();
+  if (!fresh) {
+    const cached = readCache<ProfileData>(key);
+    if (cached) return cached;
+  }
+
+  const prQuery = `is:pr is:merged author:${login} -user:${login}`;
+  const data = await ghGraphql(PROFILE_QUERY, { login, prQuery });
+  const user = data.user;
+  if (!user) throw new Error(`Not a GitHub user: ${login}`);
+
+  const profile: ProfileData = {
+    version: CACHE_VERSION,
+    login: user.login,
+    name: user.name,
+    bio: user.bio,
+    createdAt: user.createdAt,
+    pinned: user.pinnedItems.nodes.map((n: any) => n.nameWithOwner),
+    repos: user.repositories.nodes.map((n: any) => ({
+      fullName: n.nameWithOwner,
+      isFork: n.isFork,
+      stars: n.stargazerCount,
+      createdAt: n.createdAt,
+      pushedAt: n.pushedAt,
+    })),
+    mergedPrsElsewhere: data.search.issueCount,
+    fetchedAt: new Date().toISOString(),
+  };
+  writeCache(key, profile);
+  return profile;
+}
+
+// The login behind the token, used to switch on self mode.
+// Cached like everything else, keyed under "me" (the token rarely changes owner).
+export async function fetchMyLogin(): Promise<string> {
+  const cached = readCache<{ version: number; fetchedAt: string; login: string }>("me");
+  if (cached) return cached.login;
+
+  const me = await ghJson("/user");
+  writeCache("me", { version: CACHE_VERSION, fetchedAt: new Date().toISOString(), login: me.login });
+  return me.login;
 }

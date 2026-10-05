@@ -1,13 +1,17 @@
 // Repo scanner: turns one RepoData into the signals that fired, each with a receipt.
 // Pure functions only. Weights and the final score live in the scoring step.
 
-import type { RepoData } from "./gh";
+import type { RepoData, ProfileData } from "./gh";
+
+export type Group = "Wrapper" | "Tutorial" | "Farmer";
 
 export type Signal = {
-  id: string; // matches the signal table in PRODUCT.md: "1", "2", "4", "5", "P1"
-  group: "Wrapper" | "Tutorial" | "Farmer" | "credit";
+  id: string; // matches the signal table in PRODUCT.md: "1", "2", "4", "5", "7", "8", "P1", "P2"
+  group: Group | "credit";
   tier: "suspicious" | "contradicted" | "credit";
+  where: string; // repo full name, or the login for profile signals
   receipt: string;
+  detail?: string; // the one fact a quip can quote, e.g. the SDK name or the claimed language
 };
 
 // --- shared helpers ---
@@ -55,10 +59,12 @@ export function readmeVsLogic(repo: RepoData): Signal | null {
   const words = wordCount(repo.readme);
   const lines = logicLines(repo);
   if (words < README_MIN_WORDS) return null;
+  if (lines === 0) return null; // docs-only repos (awesome lists, notes) don't claim to be code
   if (words < lines * README_RATIO) return null;
 
   return {
     id: "1",
+    where: repo.fullName,
     group: "Tutorial",
     tier: "suspicious",
     receipt: `${words} README words for about ${lines} lines of code`,
@@ -119,9 +125,11 @@ export function llmWrapper(repo: RepoData): Signal | null {
 
   return {
     id: "2",
+    where: repo.fullName,
     group: "Wrapper",
     tier: "contradicted",
     receipt: `claims "${claim[0]}", ships about ${lines} lines of code around ${sdks.join(", ")}`,
+    detail: sdks[0],
   };
 }
 
@@ -159,6 +167,7 @@ export function templateFingerprint(repo: RepoData): Signal | null {
   if (scratch) {
     return {
       id: "4",
+      where: repo.fullName,
       group: "Tutorial",
       tier: "contradicted",
       receipt: `says "${scratch[0]}", still has ${marks.join(", ")}`,
@@ -166,6 +175,7 @@ export function templateFingerprint(repo: RepoData): Signal | null {
   }
   return {
     id: "4",
+    where: repo.fullName,
     group: "Tutorial",
     tier: "suspicious",
     receipt: `template leftovers: ${marks.join(", ")}`,
@@ -206,9 +216,11 @@ export function stackMismatch(repo: RepoData): Signal | null {
     const actual = Object.entries(repo.languages).sort((a, b) => b[1] - a[1])[0]![0];
     return {
       id: "5",
+      where: repo.fullName,
       group: "Wrapper",
       tier: "contradicted",
       receipt: `claims ${claim}, GitHub counts ${Math.round(share * 100)}% (mostly ${actual})`,
+      detail: claim,
     };
   }
   return null;
@@ -226,7 +238,7 @@ export function testsAndCi(repo: RepoData): Signal | null {
   const parts: string[] = [];
   if (tests.length > 0) parts.push(`${tests.length} test files`);
   if (ci) parts.push("CI workflows");
-  return { id: "P1", group: "credit", tier: "credit", receipt: parts.join(" and ") };
+  return { id: "P1", group: "credit", tier: "credit", where: repo.fullName, receipt: parts.join(" and ") };
 }
 
 // --- entry point ---
@@ -236,39 +248,82 @@ export function scanRepo(repo: RepoData): Signal[] {
   return results.filter((s): s is Signal => s !== null);
 }
 
-// Smallest runnable check: `bun src/scan.ts`
-if (import.meta.main) {
-  const fake: RepoData = {
-    fullName: "someone/todo-app",
-    description: "An autonomous AI agent built from scratch in Rust",
-    isFork: false,
-    stars: 0,
-    defaultBranch: "main",
-    createdAt: "2026-01-01T00:00:00Z",
-    pushedAt: "2026-01-01T00:00:00Z",
-    files: [
-      { path: "src/index.ts", size: 4000 }, // about 100 lines
-      { path: "node_modules/big/index.js", size: 900000 },
-      { path: "public/next.svg", size: 1000 },
-      { path: "package.json", size: 300 },
-    ],
-    treeTruncated: false,
-    readme: "word ".repeat(500),
-    languages: { TypeScript: 4000 },
-    commits: [],
-    manifests: { "package.json": JSON.stringify({ dependencies: { openai: "^4", next: "15" } }) },
-    fetchedAt: "2026-10-05T00:00:00Z",
+// --- claims found without an LLM (shown in the report, never scored on their own) ---
+
+export function regexClaims(text: string): string[] {
+  const claims: string[] = [];
+  const big = text.match(BIG_CLAIM);
+  if (big) claims.push(big[0]);
+  for (const lang of claimedLanguages(text)) claims.push(`written in ${lang}`);
+  const scratch = text.match(FROM_SCRATCH);
+  if (scratch) claims.push(scratch[0]);
+  return claims;
+}
+
+// --- profile signals: 7, 8, P2 ---
+
+const MIN_EMPTY_FORKS = 3;
+
+// ponytail: a fork whose pushedAt is not after its createdAt never got a push of its own.
+// Costs zero API calls. Use the compare API per fork if this misses forks synced from upstream.
+export function forkPadding(profile: ProfileData): Signal | null {
+  const empty = profile.repos.filter((r) => r.isFork && new Date(r.pushedAt) <= new Date(r.createdAt));
+  if (empty.length < MIN_EMPTY_FORKS) return null;
+
+  return {
+    id: "7",
+    group: "Farmer",
+    tier: "suspicious",
+    where: profile.login,
+    receipt: `${empty.length} of ${profile.repos.length} repos are forks with no commits of their own`,
+    detail: String(empty.length),
   };
+}
 
-  console.assert(logicLines(fake) === 100, "node_modules and non-code files are skipped");
-  const ids = scanRepo(fake).map((s) => `${s.id}:${s.tier}`);
-  console.assert(ids.join(",") === "1:suspicious,2:contradicted,4:contradicted,5:contradicted", `got ${ids}`);
+const BACKDATE_DAYS = 30;
+const BACKDATE_MIN_COMMITS = 5;
+const BACKDATE_MIN_SHARE = 0.25;
 
-  console.assert(claimedLanguages("Written in pure C++ and built with React").join() === "c++", "React is not a language");
-  console.assert(llmDependencies({ ...fake, manifests: { "requirements.txt": "openai>=1.0\nflask\nlangchain-core" } }).join() === "openai,langchain-core");
+// `git commit --date` moves the author date only. A month or more between author and
+// committer date, on a quarter of someone's own commits, looks like graph painting.
+export function backdatedCommits(login: string, repos: RepoData[]): Signal | null {
+  let own = 0;
+  let backdated = 0;
+  let worstDays = 0;
 
-  const clean = { ...fake, fullName: "someone/real", description: "", readme: "", manifests: {}, files: [{ path: "src/a.test.ts", size: 10 }] };
-  console.assert(scanRepo(clean).map((s) => s.id).join() === "P1", "clean repo only gets credit");
+  for (const repo of repos) {
+    for (const commit of repo.commits) {
+      if (commit.authorLogin?.toLowerCase() !== login.toLowerCase()) continue;
+      own++;
+      const days = (new Date(commit.committerDate).getTime() - new Date(commit.authorDate).getTime()) / 86_400_000;
+      if (Math.abs(days) >= BACKDATE_DAYS) {
+        backdated++;
+        worstDays = Math.max(worstDays, Math.round(Math.abs(days)));
+      }
+    }
+  }
 
-  console.log("scan.ts checks passed");
+  if (backdated < BACKDATE_MIN_COMMITS) return null;
+  if (backdated / own < BACKDATE_MIN_SHARE) return null;
+
+  return {
+    id: "8",
+    group: "Farmer",
+    tier: "suspicious",
+    where: login,
+    receipt: `${backdated} of ${own} commits have author and commit dates ${BACKDATE_DAYS}+ days apart (worst: ${worstDays} days)`,
+    detail: String(worstDays),
+  };
+}
+
+export function mergedPrs(profile: ProfileData): Signal | null {
+  if (profile.mergedPrsElsewhere === 0) return null;
+  const n = profile.mergedPrsElsewhere;
+  return {
+    id: "P2",
+    group: "credit",
+    tier: "credit",
+    where: profile.login,
+    receipt: `${n} merged PR${n === 1 ? "" : "s"} into other people's repos`,
+  };
 }

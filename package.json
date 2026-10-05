@@ -7,10 +7,21 @@
     "deeplarp": "./src/cli.ts"
   },
   "scripts": {
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "check": "tsc --noEmit && bun test",
+    "calibrate": "bun src/calibrate.ts"
   },
   "devDependencies": {
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2"
-  }
+  },
+  "dependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "satori": "^0.35.0"
+  },
+  "files": [
+    "src",
+    "assets"
+  ]
 }
