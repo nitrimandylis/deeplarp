@@ -10,6 +10,7 @@ const WEIGHTS: Record<string, number> = {
   "4:suspicious": 20,
   "4:contradicted": 30,
   "5:contradicted": 30,
+  "6:suspicious": 15,
   "7:suspicious": 15,
   "8:suspicious": 20,
   "8:contradicted": 40,
@@ -185,6 +186,13 @@ const QUIPS: QuipRule[] = [
     line: (s) => `${find(s, "7")!.detail} forks, zero commits to any of them. A collector.`,
   },
   {
+    when: (s) => find(s, "6") !== undefined,
+    line: (s) => {
+      const [lines, commits] = find(s, "6")!.detail!.split(":");
+      return `${lines} lines of code arrived in ${commits} commit${commits === "1" ? "" : "s"}. Efficient.`;
+    },
+  },
+  {
     when: (s) => find(s, "1") !== undefined,
     line: () => "The README is longer than the code. Documentation-driven development, minus the development.",
   },
@@ -207,6 +215,7 @@ const FIXES: Record<string, string> = {
   "3": "Drop the marketing words until there's code to back them",
   "4": "Delete the template leftovers and rewrite the template README",
   "5": "Make the stack claim match the language breakdown",
+  "6": "Commit as you build. One giant commit hides how the code got written",
   "7": "Archive or delete forks you never committed to",
   "8": "Stop rewriting author dates. Real dates on fewer commits beat a painted graph",
 };

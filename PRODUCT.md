@@ -22,6 +22,7 @@ Decided in a grill session on 2026-10-05.
 | 3 | Empty claim: hype words ("production-ready", "world's first", "AI-powered"...) in the pitch, under 50 lines of code. Skips docs/list repos, profile READMEs, third-party write-ups | Wrapper | contradicted |
 | 4 | Template fingerprint (create-next-app/Vite defaults, tutorial names) | Tutorial | suspicious, contradicted if it claims "from scratch" |
 | 5 | Claimed stack vs GitHub language breakdown | Wrapper | contradicted |
+| 6 | Big-bang: 3000+ lines of code in 3 or fewer commits (added 2026-10-05; at 1500 it mostly caught students uploading finished class projects) | Tutorial | suspicious |
 | 7 | Fork padding: forks with zero own commits | Farmer | suspicious |
 | 8 | Backdated commits: scripted-looking runs (one repeated message or one clock time) dated before their repo existed, or with author dates 30+ days before the commit | Farmer | contradicted if before the repo existed, else suspicious |
 | P1 | Tests and CI exist | credit | subtracts |
@@ -29,7 +30,7 @@ Decided in a grill session on 2026-10-05.
 
 Credits are floored at -20 in total, so tests and PRs can't erase a contradiction.
 
-Cut on purpose: big-bang commit (squash merges make it noisy), star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).
+Cut on purpose: star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).
 
 ## Archetypes
 

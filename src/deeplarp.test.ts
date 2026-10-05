@@ -146,6 +146,14 @@ test("LLM SDKs in a subfolder manifest still count", () => {
   expect(llmDependencies(repo({ manifests: { "backend/requirements.txt": "fastapi\nanthropic" } }))).toEqual(["anthropic"]);
 });
 
+test("big-bang: 3000+ lines in 3 or fewer commits", () => {
+  const commit: Commit = { sha: "a", authorLogin: "u", message: "init", authorDate: "2026-01-01T00:00:00Z", committerDate: "2026-01-01T00:00:00Z" };
+  const big = [{ path: "src/app.py", size: 160_000 }]; // about 4000 lines
+  expect(scanRepo(repo({ files: big, languages: { Python: 160_000 }, commits: [commit, commit] }))[0]!.receipt).toBe("about 4000 lines of code in 2 commits");
+  expect(scanRepo(repo({ files: big, languages: { Python: 160_000 }, commits: Array(4).fill(commit) }))).toEqual([]);
+  expect(scanRepo(repo({ commits: [commit] }))).toEqual([]); // 1000 lines is too small to call
+});
+
 test("stack claims only count real languages", () => {
   expect(claimedLanguages("Written in pure C++ and built with React")).toEqual(["c++"]);
   expect(claimedLanguages("made with TypeScript")).toEqual(["typescript"]);

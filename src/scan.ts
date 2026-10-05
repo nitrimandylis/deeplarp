@@ -6,7 +6,7 @@ import type { RepoData, ProfileData, Commit } from "./gh";
 export type Group = "Wrapper" | "Tutorial" | "Farmer";
 
 export type Signal = {
-  id: string; // matches the signal table in PRODUCT.md: "1"-"5", "7", "8", "P1", "P2"
+  id: string; // matches the signal table in PRODUCT.md: "1"-"8", "P1", "P2"
   group: Group | "credit";
   tier: "suspicious" | "contradicted" | "credit";
   where: string; // repo full name, or the login for profile signals
@@ -275,6 +275,32 @@ export function stackMismatch(repo: RepoData): Signal | null {
   };
 }
 
+// --- signal 6: big-bang commits ---
+
+// A finished codebase that arrived in a handful of commits. Squash merges don't trip
+// this (they still leave one commit per PR). An old project imported in one "initial
+// commit" does, so it stays suspicious and can't reach the top band on its own.
+const BIG_BANG_MAX_COMMITS = 3;
+// 1500-2200 line hits in testing were students uploading a finished class project.
+const BIG_BANG_MIN_LINES = 3000;
+
+export function bigBang(repo: RepoData): Signal | null {
+  const commits = repo.commits.length; // the fetch takes up to 100, so <= 3 is the real total
+  if (commits === 0 || commits > BIG_BANG_MAX_COMMITS) return null;
+
+  const lines = logicLines(repo);
+  if (lines < BIG_BANG_MIN_LINES) return null;
+
+  return {
+    id: "6",
+    where: repo.fullName,
+    group: "Tutorial",
+    tier: "suspicious",
+    receipt: `about ${lines} lines of code in ${commits} commit${commits === 1 ? "" : "s"}`,
+    detail: `${lines}:${commits}`,
+  };
+}
+
 // --- P1: tests and CI ---
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.go$|(^|\/)test_[^/]+\.py$|(^|\/)(tests?|__tests__|spec)\/)/;
@@ -298,7 +324,7 @@ export function testsAndCi(repo: RepoData): Signal | null {
 // --- entry point ---
 
 export function scanRepo(repo: RepoData): Signal[] {
-  const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), testsAndCi(repo)];
+  const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), bigBang(repo), testsAndCi(repo)];
   return results.filter((s): s is Signal => s !== null);
 }
 
