@@ -11,7 +11,7 @@ import { scoreSignals, archetypeFor, quipFor, fixesFor, SUSPICION_CAP } from "./
 import { pickRepos, npcReason, mapLimited, showcase, type Report } from "./report";
 import { parseStory, buildPrompt } from "./llm";
 import { normaliseArgs, cardPaths, formatReport } from "./cli";
-import { renderCard, renderSvg, accentFor } from "./card";
+import { renderCard, renderSvg, accentFor, creditBars } from "./card";
 
 function repo(overrides: Partial<RepoData> = {}): RepoData {
   return {
@@ -490,4 +490,16 @@ test("theme: auto follows the score, named themes override, unknown ones throw",
   expect(accentFor({ ...r, score: 80 }, "auto")).toBe("#ff5c39");
   expect(accentFor(r, "violet")).toBe("#a78bfa");
   expect(() => accentFor(r, "plaid")).toThrow("Unknown theme");
+});
+
+test("credit bars read the number each credit receipt starts with", () => {
+  const r = fakeReport(false);
+  r.signals = [
+    { id: "P1", group: "credit", tier: "credit", points: 0, receipts: ["me/aidetect: 33 test files and CI workflows"] },
+    { id: "P2", group: "credit", tier: "credit", points: 0, receipts: ["me: 1 merged PR into other people's repos"] },
+  ];
+  expect(creditBars(r)).toEqual([
+    { label: "aidetect", value: 33, unit: "tests" },
+    { label: "merged PRs", value: 1, unit: "PR" },
+  ]);
 });

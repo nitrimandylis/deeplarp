@@ -107,6 +107,22 @@ export function tierCounts(report: Report): Record<"contradicted" | "suspicious"
   return counts;
 }
 
+// One bar per credit receipt: test files per repo, then merged PRs. The number is the
+// one the receipt starts with ("aidetect: 33 test files and CI workflows").
+export function creditBars(report: Report): { label: string; value: number; unit: string }[] {
+  const bars: { label: string; value: number; unit: string }[] = [];
+  for (const s of report.signals) {
+    if (s.tier !== "credit") continue;
+    for (const receipt of s.receipts) {
+      const [where = "", text = ""] = receipt.split(": ");
+      const value = parseInt(text, 10) || 0;
+      if (s.id === "P2") bars.push({ label: "merged PRs", value, unit: value === 1 ? "PR" : "PRs" });
+      else bars.push({ label: where.split("/").pop() ?? where, value, unit: "tests" });
+    }
+  }
+  return bars;
+}
+
 export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD): El {
   const canvas = CANVASES[options.layout];
   const px = (n: number) => Math.round(n * canvas.scale);
@@ -195,17 +211,24 @@ export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD):
     tile(String(counts.credit), "credits", counts.credit > 0 ? COLORS.credit : COLORS.text),
   );
 
-  // Points per group, as bars out of 100. Only on the taller cards.
-  const groupRow = (name: string, points: number) =>
+  // Bars on the taller cards: points per group, out of 100. When no group has points
+  // (a clean profile), the panel shows what backs it up instead: one bar per credit.
+  const barRow = (label: string, value: number, max: number, valueText: string, color: string) =>
     el(
       { alignItems: "center", gap: px(16), fontSize: px(16) },
-      el({ width: px(90), color: COLORS.muted }, name.toLowerCase()),
+      el({ width: px(130), color: COLORS.muted }, shorten(label, 14)),
       el(
         { flex: 1, height: px(10), borderRadius: px(5), backgroundColor: COLORS.track },
-        el({ width: `${Math.min(points, 100)}%`, height: "100%", borderRadius: px(5), backgroundColor: accent }),
+        el({ width: `${Math.min((value / max) * 100, 100)}%`, height: "100%", borderRadius: px(5), backgroundColor: color }),
       ),
-      el({ width: px(60), justifyContent: "flex-end", color: points > 0 ? COLORS.text : COLORS.dim }, `${points} pts`),
+      el({ width: px(90), justifyContent: "flex-end", color: value > 0 ? COLORS.text : COLORS.dim }, valueText),
     );
+  const groupPoints = Object.entries(report.groups);
+  const credits = creditBars(report)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, canvas.lines);
+  const showCredits = canvas.breakdown && groupPoints.every(([, points]) => points === 0) && credits.length > 0;
+  const mostCredit = Math.max(1, ...credits.map((c) => c.value));
   const breakdown = el(
     {
       flexDirection: "column",
@@ -215,15 +238,20 @@ export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD):
       border: `1px solid ${COLORS.border}`,
       borderRadius: px(8),
     },
-    el({ fontSize: px(15), color: COLORS.muted }, "where the points come from"),
-    ...Object.entries(report.groups).map(([name, points]) => groupRow(name, points)),
+    el({ fontSize: px(15), color: COLORS.muted }, showCredits ? "what backs it up" : "where the points come from"),
+    ...(showCredits
+      ? credits.map((c) => barRow(c.label, c.value, mostCredit, `${c.value} ${c.unit}`, COLORS.credit))
+      : groupPoints.map(([name, points]) => barRow(name.toLowerCase(), points, 100, `${points} pts`, accent))),
   );
 
   const body = el(
     { flexDirection: "column", flex: 1, justifyContent: "center", gap: px(22), padding: `0 ${px(28)}px` },
     hero,
     quip,
-    el({ flexDirection: "column", gap: px(4) }, ...(receipts.length > 0 ? receipts : [el({ fontSize: px(19), color: COLORS.dim }, "› no receipts")])),
+    // The credits panel already lists every credit receipt, so skip the text version.
+    ...(showCredits
+      ? []
+      : [el({ flexDirection: "column", gap: px(4) }, ...(receipts.length > 0 ? receipts : [el({ fontSize: px(19), color: COLORS.dim }, "› no receipts")]))]),
     tiles,
     ...(canvas.breakdown ? [breakdown] : []),
   );
