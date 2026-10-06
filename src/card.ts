@@ -12,12 +12,13 @@ const ASSETS = join(import.meta.dir, "..", "assets");
 export const LAYOUTS = ["wide", "square", "story"] as const;
 export type Layout = (typeof LAYOUTS)[number];
 
-// Size, text scale, and how many receipt lines fit. The wide card shows one line per
-// signal; the taller ones list every repo a signal fired on and let text wrap.
-const CANVASES: Record<Layout, { width: number; height: number; scale: number; lines: number; chars: number; everyRepo: boolean; stacked: boolean }> = {
-  wide: { width: 1200, height: 630, scale: 1, lines: 4, chars: 70, everyRepo: false, stacked: false },
-  square: { width: 1080, height: 1080, scale: 1.05, lines: 8, chars: 100, everyRepo: true, stacked: false },
-  story: { width: 1080, height: 1920, scale: 1.35, lines: 9, chars: 100, everyRepo: true, stacked: true },
+// Size, text scale, how many receipt lines fit, and whether the group breakdown
+// panel fits. The wide card is a summary; the taller ones add the breakdown.
+// The story card stacks the archetype under a bigger score to fill its height.
+const CANVASES: Record<Layout, { width: number; height: number; scale: number; lines: number; breakdown: boolean; stacked: boolean; scoreSize: number }> = {
+  wide: { width: 1200, height: 630, scale: 1, lines: 2, breakdown: false, stacked: false, scoreSize: 84 },
+  square: { width: 1080, height: 1080, scale: 1.05, lines: 4, breakdown: true, stacked: false, scoreSize: 84 },
+  story: { width: 1080, height: 1920, scale: 1.35, lines: 6, breakdown: true, stacked: true, scoreSize: 150 },
 };
 
 // Accent colours. "auto" picks one from the score: green for Real One, yellow for
@@ -34,12 +35,29 @@ const ACCENTS: Record<string, string> = {
 export const THEMES = ["auto", ...Object.keys(ACCENTS)];
 
 const COLORS = {
-  base: "#101114",
-  panel: "#181a1f",
-  border: "#2a2d35",
+  base: "#0b0d12",
+  bar: "#11141a",
+  panel: "#11141a",
+  border: "#232733",
   text: "#e8e6e1",
   muted: "#8a8f98",
+  dim: "#5b606b",
+  track: "#1c2029",
   credit: "#5ccf8a",
+};
+
+// Short names for the signal table in PRODUCT.md, used in the reason line.
+const SIGNAL_NAMES: Record<string, string> = {
+  "1": "readme padding",
+  "2": "llm wrapper",
+  "3": "empty claims",
+  "4": "template leftovers",
+  "5": "stack mismatch",
+  "6": "big-bang commits",
+  "7": "fork padding",
+  "8": "backdated commits",
+  P1: "tests + CI",
+  P2: "merged PRs",
 };
 
 export type CardOptions = { layout: Layout; theme: string; handle?: string };
@@ -68,41 +86,146 @@ function shorten(text: string, max: number): string {
   return text.length <= max ? text : text.slice(0, max - 1) + "…";
 }
 
+// The line under the archetype: what put the score there, biggest effect first.
+export function reasonFor(report: Report): string {
+  if (report.npcReason) return `no score: ${report.npcReason}`;
+  const names: string[] = [];
+  for (const s of report.signals) {
+    const name = SIGNAL_NAMES[s.id] ?? s.id;
+    if (!names.includes(name)) names.push(name);
+  }
+  if (names.length === 0) return "nothing fired";
+  let reason = names.slice(0, 2).join(" + ");
+  if (report.capped) reason += " · capped at 74";
+  return reason;
+}
+
+// Receipts by tier, counted per repo (one signal on 3 repos is 3 receipts).
+export function tierCounts(report: Report): Record<"contradicted" | "suspicious" | "credit", number> {
+  const counts = { contradicted: 0, suspicious: 0, credit: 0 };
+  for (const s of report.signals) counts[s.tier] += s.receipts.length;
+  return counts;
+}
+
 export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD): El {
   const canvas = CANVASES[options.layout];
   const px = (n: number) => Math.round(n * canvas.scale);
   const accent = accentFor(report, options.theme);
+  const counts = tierCounts(report);
+  const handle = options.handle ?? report.target;
 
-  const rows: { tier: string; text: string }[] = [];
-  for (const s of report.signals) {
-    const texts = canvas.everyRepo ? s.receipts : s.receipts.slice(0, 1);
-    for (const text of texts) rows.push({ tier: s.tier, text });
-  }
-  // Leave the last line for "and N more" when it doesn't all fit.
-  const shown = rows.length > canvas.lines ? rows.slice(0, canvas.lines - 1) : rows;
-  const receipts = shown.map((row) =>
+  // Title bar and prompt line, so the card reads as terminal output.
+  const dot = (color: string) => el({ width: px(12), height: px(12), borderRadius: px(6), backgroundColor: color });
+  const titleBar = el(
+    {
+      alignItems: "center",
+      height: px(44),
+      padding: `0 ${px(20)}px`,
+      backgroundColor: COLORS.bar,
+      borderBottom: `1px solid ${COLORS.border}`,
+      fontSize: px(16),
+      color: COLORS.muted,
+    },
+    el({ gap: px(8), width: px(120) }, dot(COLORS.track), dot(COLORS.track), dot(accent)),
+    el({ flex: 1, justifyContent: "center" }, `${handle} — deeplarp`),
+    el({ width: px(120) }),
+  );
+  const promptLine = el(
+    { justifyContent: "space-between", fontSize: px(18), color: COLORS.muted },
+    el({ gap: px(10) }, el({ color: accent }, "$"), el({ color: COLORS.text }, `bunx deeplarp ${report.target}`)),
+    el({}, new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })),
+  );
+
+  // Score on the left, archetype and the reason for it on the right.
+  const hero = el(
+    canvas.stacked
+      ? { flexDirection: "column", gap: px(28) }
+      : { justifyContent: "space-between", alignItems: "flex-end" },
     el(
-      { gap: px(12), fontSize: px(20), color: COLORS.text },
-      el({ color: row.tier === "credit" ? COLORS.credit : accent, width: px(160), flexShrink: 0 }, row.tier),
-      // "owner/repo: text" -> "repo: text" to save width. flex: 1 + wordBreak keeps
-      // long repo names inside the panel instead of running off the edge.
-      el({ flex: 1, wordBreak: "break-word" }, shorten(row.text.replace(/^[^/:]+\//, ""), canvas.chars)),
+      { alignItems: "flex-end", gap: px(16) },
+      el({ fontFamily: "PressStart", fontSize: px(canvas.scoreSize), color: accent, lineHeight: 1 }, report.score === null ? "--" : String(report.score)),
+      el({ fontSize: px(26), color: COLORS.muted }, "/100"),
+    ),
+    el(
+      { flexDirection: "column", alignItems: canvas.stacked ? "flex-start" : "flex-end", gap: px(6) },
+      el({ fontSize: px(26), letterSpacing: px(4), color: COLORS.text }, report.archetype.toUpperCase()),
+      el({ fontSize: px(17), color: COLORS.muted }, reasonFor(report)),
     ),
   );
 
-  if (shown.length < rows.length) {
-    receipts.push(el({ fontSize: px(20), color: COLORS.muted }, `and ${rows.length - shown.length} more`));
+  const quip = el({ fontSize: px(26), color: accent, lineHeight: 1.35 }, report.quip);
+
+  // One "›" line per repo a signal fired on, biggest effect first. Credits get green.
+  const rows: { tier: string; text: string }[] = [];
+  for (const s of report.signals) {
+    for (const text of s.receipts) rows.push({ tier: s.tier, text });
+  }
+  const shown = rows.slice(0, canvas.lines);
+  const receipts = shown.map((row) =>
+    el(
+      { gap: px(12), fontSize: px(19), color: COLORS.muted, lineHeight: 1.4 },
+      el({ color: row.tier === "credit" ? COLORS.credit : accent, flexShrink: 0 }, "›"),
+      // "owner/repo: text" -> "repo: text" to save width.
+      el({ flex: 1, wordBreak: "break-word" }, shorten(row.text.replace(/^[^/:]+\//, ""), 120)),
+    ),
+  );
+  if (rows.length > shown.length) {
+    receipts.push(el({ fontSize: px(17), color: COLORS.dim, paddingLeft: px(24) }, `+ ${rows.length - shown.length} more receipts`));
   }
 
-  const scoreBlock = el(
-    { alignItems: "flex-end", gap: px(12) },
-    el({ fontFamily: "PressStart", fontSize: px(110), color: accent }, report.score === null ? "--" : String(report.score)),
-    el({ fontSize: px(30), color: COLORS.muted, paddingBottom: px(6) }, "/100"),
+  const tile = (value: string, label: string, color: string) =>
+    el(
+      {
+        flex: 1,
+        flexDirection: "column",
+        gap: px(6),
+        padding: `${px(16)}px ${px(18)}px`,
+        backgroundColor: COLORS.panel,
+        border: `1px solid ${COLORS.border}`,
+        borderRadius: px(8),
+      },
+      el({ fontSize: px(34), color }, value),
+      el({ fontSize: px(15), color: COLORS.muted }, label),
+    );
+  const tiles = el(
+    { gap: px(14) },
+    tile(String(report.reposScanned.length), "repos scanned", COLORS.text),
+    tile(String(counts.contradicted), "contradicted", counts.contradicted > 0 ? accent : COLORS.text),
+    tile(String(counts.suspicious), "suspicious", COLORS.text),
+    tile(String(counts.credit), "credits", counts.credit > 0 ? COLORS.credit : COLORS.text),
   );
-  const nameBlock = el(
-    { flexDirection: "column", gap: px(6), paddingBottom: px(4) },
-    el({ fontSize: px(44), fontWeight: 700 }, report.archetype),
-    el({ fontSize: px(20), color: COLORS.muted }, report.capped ? "capped at 74: nothing contradicted" : "larp score"),
+
+  // Points per group, as bars out of 100. Only on the taller cards.
+  const groupRow = (name: string, points: number) =>
+    el(
+      { alignItems: "center", gap: px(16), fontSize: px(16) },
+      el({ width: px(90), color: COLORS.muted }, name.toLowerCase()),
+      el(
+        { flex: 1, height: px(10), borderRadius: px(5), backgroundColor: COLORS.track },
+        el({ width: `${Math.min(points, 100)}%`, height: "100%", borderRadius: px(5), backgroundColor: accent }),
+      ),
+      el({ width: px(60), justifyContent: "flex-end", color: points > 0 ? COLORS.text : COLORS.dim }, `${points} pts`),
+    );
+  const breakdown = el(
+    {
+      flexDirection: "column",
+      gap: px(16),
+      padding: `${px(18)}px ${px(20)}px`,
+      backgroundColor: COLORS.panel,
+      border: `1px solid ${COLORS.border}`,
+      borderRadius: px(8),
+    },
+    el({ fontSize: px(15), color: COLORS.muted }, "where the points come from"),
+    ...Object.entries(report.groups).map(([name, points]) => groupRow(name, points)),
+  );
+
+  const body = el(
+    { flexDirection: "column", flex: 1, justifyContent: "center", gap: px(22), padding: `0 ${px(28)}px` },
+    hero,
+    quip,
+    el({ flexDirection: "column", gap: px(4) }, ...(receipts.length > 0 ? receipts : [el({ fontSize: px(19), color: COLORS.dim }, "› no receipts")])),
+    tiles,
+    ...(canvas.breakdown ? [breakdown] : []),
   );
 
   return el(
@@ -113,34 +236,14 @@ export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD):
       backgroundColor: COLORS.base,
       fontFamily: "JetBrains",
       color: COLORS.text,
-      padding: px(56),
-      gap: px(28),
     },
+    titleBar,
+    el({ padding: `${px(18)}px ${px(28)}px 0` }, el({ flex: 1, flexDirection: "column" }, promptLine)),
+    body,
     el(
-      { justifyContent: "space-between", alignItems: "center", fontSize: px(24), color: COLORS.muted },
-      el({}, "deeplarp"),
-      el({}, options.handle ?? report.target),
+      { justifyContent: "center", padding: `${px(18)}px 0 ${px(22)}px`, fontSize: px(14), color: COLORS.dim },
+      "receipts from public GitHub data · not a verdict on intent",
     ),
-    canvas.stacked
-      ? el({ flexDirection: "column", gap: px(24), paddingTop: px(40) }, scoreBlock, nameBlock)
-      : el({ alignItems: "flex-end", gap: px(40) }, scoreBlock, nameBlock),
-    el(
-      {
-        flexDirection: "column",
-        gap: px(14),
-        backgroundColor: COLORS.panel,
-        border: `1px solid ${COLORS.border}`,
-        borderRadius: px(12),
-        padding: `${px(22)}px ${px(26)}px`,
-        flexGrow: 1,
-        // Clip rather than push the roast line off the card if receipts run long.
-        flexShrink: 1,
-        minHeight: 0,
-        overflow: "hidden",
-      },
-      ...(receipts.length > 0 ? receipts : [el({ fontSize: px(20), color: COLORS.muted }, "no receipts")]),
-    ),
-    el({ fontSize: px(24), color: COLORS.text }, report.quip),
   );
 }
 
