@@ -1,6 +1,7 @@
 // Optional `claude -p` layer: pulls claims out of the bio/READMEs and rewrites the quip.
 // It never touches the score. Any failure returns null and the caller keeps the regex version.
 
+import { spawnSync } from "node:child_process";
 import type { Score } from "./score";
 
 export type Story = { claims: string[]; quip: string };
@@ -54,12 +55,12 @@ export function narrate(
   input: { target: string; claimSources: string[]; score: Score; quip: string },
   model: string = DEFAULT_MODEL,
 ): Story | null {
-  if (!Bun.which("claude")) return null;
-
-  const result = Bun.spawnSync(["claude", "-p", "--model", model], {
-    stdin: Buffer.from(buildPrompt(input)),
+  // A missing `claude` binary shows up as result.error (ENOENT), same as any other failure.
+  const result = spawnSync("claude", ["-p", "--model", model], {
+    input: buildPrompt(input),
+    encoding: "utf8",
     timeout: TIMEOUT_MS,
   });
-  if (result.exitCode !== 0) return null;
-  return parseStory(result.stdout.toString());
+  if (result.error || result.status !== 0) return null;
+  return parseStory(result.stdout);
 }

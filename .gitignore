@@ -1,3 +1,11 @@
 node_modules/
+dist/
 fixtures.local.json
+.DS_Store
+
+# Generated cards.
 *.png
+*.svg
+
+# ...except the example card shown in the README.
+!docs/*.png

@@ -2,7 +2,7 @@
 // Never prints: the CLI and the card both render from the Report.
 
 import { fetchRepo, fetchProfile, fetchMyLogin, apiCalls, type RepoData, type ProfileData } from "./gh";
-import { scanRepo, isTutorialPattern, forkPadding, backdatedCommits, mergedPrs, regexClaims, type Signal } from "./scan";
+import { scanRepo, isTutorialPattern, forkPadding, backdatedCommits, mergedPrs, regexClaims, PITCH_CHARS, type Signal } from "./scan";
 import { scoreSignals, quipFor, fixesFor, type Score, type Fix } from "./score";
 import { narrate, DEFAULT_MODEL } from "./llm";
 
@@ -27,8 +27,6 @@ export const TOP_BY_STARS = 20;
 const FETCH_CONCURRENCY = 10;
 const NPC_MIN_REPOS = 3;
 const NPC_MIN_DAYS = 30;
-// Claims live near the top of a README. Further down is usually docs or quoted lists.
-const CLAIM_CHARS = 2000;
 
 // Pinned repos first, then the top `limit` by stars that aren't pinned. Forks are skipped.
 export function pickRepos(profile: ProfileData, limit: number = TOP_BY_STARS): string[] {
@@ -142,7 +140,9 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
   const score = scoreSignals(signals, npc !== null);
   const self = owner.toLowerCase() === myLogin.toLowerCase();
   let quip = quipFor(score);
-  let claims = dedupeClaims(claimSources.flatMap((text) => regexClaims(text.slice(0, CLAIM_CHARS))));
+  // Same window signal 3 scores on. Further down a README is docs, or quotes someone
+  // else's claim (the kernel README addresses "AI-powered coding assistants").
+  let claims = dedupeClaims(claimSources.flatMap((text) => regexClaims(text.slice(0, PITCH_CHARS))));
   let model: string | null = null;
 
   if (options.llm !== false) {

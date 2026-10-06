@@ -166,7 +166,7 @@ export function llmWrapper(repo: RepoData): Signal | null {
 // --- signal 3: big claim, no code ---
 
 const EMPTY_MAX_LINES = 50;
-const PITCH_CHARS = 500; // the description plus the opening of the README
+export const PITCH_CHARS = 500; // the description plus the opening of the README
 
 export function emptyClaim(repo: RepoData): Signal | null {
   const [owner, name] = repo.fullName.split("/");

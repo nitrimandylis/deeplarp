@@ -61,7 +61,7 @@ Quips are deterministic rules (a `when` guard + a template, ordered most surpris
 
 ## Stack
 
-Bun + TypeScript. Plain `fetch` for GitHub REST and GraphQL. Token from `gh auth token`, falling back to `GITHUB_TOKEN`. There is no anonymous mode. Cache at `~/.deeplarp/cache/`, 24h TTL. Card: `satori` + `@resvg/resvg-js`, renderer copied from agent-wrapped. These are the only two runtime dependencies.
+Bun + TypeScript for dev, Node 20+ at runtime. Plain `fetch` for GitHub REST and GraphQL. Token from `gh auth token`, falling back to `GITHUB_TOKEN`. There is no anonymous mode. Cache at `~/.deeplarp/cache/`, 24h TTL. Card: `satori` + `@resvg/resvg-js`, renderer copied from agent-wrapped. These are the only two runtime dependencies.
 
 ## Build order
 
@@ -80,7 +80,10 @@ Local commits only until v1 is done. Publish after.
 
 ## Status (2026-10-06)
 
-Steps 1-9 done. Step 10 (publish) not started.
+Steps 1-9 done. Step 10 (publish) prepared, not shipped.
+
+- Publish prep (2026-10-06): runs on Node 20+ (Bun only for dev, tests and the build), so `npx deeplarp` works. `bun build` bundles `src/cli.ts` to `dist/cli.js`, `prepack` builds it. Tarball is `dist/` + `assets/` (fonts with their OFL texts), no tests or calibration. MIT LICENSE and README added. `.github/workflows/publish.yml` is copied from agent-wrapped/brushwork: OIDC trusted publishing on GitHub release, environment `npm`. It does nothing until a trusted publisher exists, and npm can't create one for an unpublished package, so 0.1.0 goes up by hand (`npm publish`). From 0.1.1 on, a GitHub release is the only publish path.
+- The listed claims now read the same 500-char pitch window signal 3 scores on (was 2000). The kernel README's note to "AI-powered coding assistants" was showing up as a torvalds claim.
 
 - Real-world pass (2026-10-05): 60 profiles. 17 working devs (contributors ranked 15 to 30 on next.js, react, deno, ruff, tailwind, django): all Real One or NPC. 10 "AI founder"-style bios: all Real One after fixes. 27 clone/hype repo owners: 10 Real One (each backed by real tests or merged PRs), 10 Unproven, 2 Tutorial Graduate, 4 NPC, 1 org (not scannable). Owners of LLM-wrapper repos: Wrapper Founder, 50/100. Fixes from it: fork padding needs half the profile, self-declared SDKs/wrappers skip signal 2, template tests and CI-only no longer earn P1, template weight 15 -> 20, Unproven archetype.
 - Hype-repo pass (2026-10-05): 35 low-star repos found by "enterprise-grade", "production-ready", "world's first". Added signal 3 after finding repos that pitch a product with zero code, including one profile with 3 "AI engine" repos made of 354 empty source files. Manifests are now read up to 2 folders deep. Empty test files no longer earn P1. Re-ran all groups: no new flags on working devs.

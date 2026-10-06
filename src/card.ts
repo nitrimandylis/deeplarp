@@ -4,10 +4,12 @@
 import satori from "satori";
 import { Resvg } from "@resvg/resvg-js";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Report } from "./report";
 
-const ASSETS = join(import.meta.dir, "..", "assets");
+// One folder up from src/ in dev and from dist/ once bundled.
+const ASSETS = join(dirname(fileURLToPath(import.meta.url)), "..", "assets");
 
 export const LAYOUTS = ["wide", "square", "story"] as const;
 export type Layout = (typeof LAYOUTS)[number];

@@ -1,8 +1,9 @@
-#!/usr/bin/env bun
+#!/usr/bin/env node
 // deeplarp CLI: argument parsing and terminal output. All the logic lives in report.ts.
 
 import { parseArgs } from "node:util";
-import { writeFileSync } from "node:fs";
+import { realpathSync, writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { scan, TOP_BY_STARS, type Report } from "./report";
 import { renderCard, renderSvg, LAYOUTS, THEMES, type CardOptions, type Layout } from "./card";
 import { DEFAULT_MODEL } from "./llm";
@@ -123,7 +124,7 @@ export function formatReport(report: Report): string {
 
 async function main(): Promise<void> {
   const { values, positionals } = parseArgs({
-    args: normaliseArgs(Bun.argv.slice(2)),
+    args: normaliseArgs(process.argv.slice(2)),
     options: {
       json: { type: "boolean", default: false },
       card: { type: "string" },
@@ -183,7 +184,14 @@ async function main(): Promise<void> {
   }
 }
 
-if (import.meta.main) {
+// Only run when executed, not when the tests import this file. realpath follows the
+// node_modules/.bin symlink that npx and global installs run through.
+function isEntryPoint(): boolean {
+  if (!process.argv[1]) return false;
+  return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+}
+
+if (isEntryPoint()) {
   try {
     await main();
   } catch (err) {

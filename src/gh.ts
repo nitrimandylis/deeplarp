@@ -3,6 +3,7 @@
 
 import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
+import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 
 const API = "https://api.github.com";
@@ -62,9 +63,9 @@ let cachedToken: string | null = null;
 export function getToken(): string {
   if (cachedToken) return cachedToken;
 
-  const result = Bun.spawnSync(["gh", "auth", "token"]);
-  const fromGh = result.stdout.toString().trim();
-  if (result.exitCode === 0 && fromGh) {
+  const result = spawnSync("gh", ["auth", "token"], { encoding: "utf8" });
+  const fromGh = (result.stdout ?? "").trim();
+  if (result.status === 0 && fromGh) {
     cachedToken = fromGh;
     return fromGh;
   }
