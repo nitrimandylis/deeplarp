@@ -80,7 +80,7 @@ Local commits only until v1 is done. Publish after.
 
 ## Status (2026-10-06)
 
-Steps 1-9 done. Step 10 (publish) prepared, not shipped.
+All 10 steps done. Published 2026-10-06: github.com/nitrimandylis/deeplarp (public) and deeplarp@0.1.0 on npm. Next versions go out through a GitHub release (publish.yml, OIDC).
 
 - Publish prep (2026-10-06): runs on Node 20+ (Bun only for dev, tests and the build), so `npx deeplarp` works. `bun build` bundles `src/cli.ts` to `dist/cli.js`, `prepack` builds it. Tarball is `dist/` + `assets/` (fonts with their OFL texts), no tests or calibration. MIT LICENSE and README added. `.github/workflows/publish.yml` is copied from agent-wrapped/brushwork: OIDC trusted publishing on GitHub release, environment `npm`. It does nothing until a trusted publisher exists, and npm can't create one for an unpublished package, so 0.1.0 goes up by hand (`npm publish`). From 0.1.1 on, a GitHub release is the only publish path.
 - shipping-clis audit (2026-10-06): verify battery passes (JSON on stdout only, `--help` in any position, unknown flags, bad values, no token, no `claude`, unknown user all exit with a sentence). Found and fixed: the repo query had no privacy filter, so a self-scan with the gh token included 4 private repos (`pi` was in the receipts). Now `privacy: PUBLIC`. Added `deeplarp-cli/SKILL.md` for agents. No man page and no vhs demo: published tools can't install a man page, and the card PNG is the hero.
