@@ -148,7 +148,7 @@ export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD):
   );
   const promptLine = el(
     { justifyContent: "space-between", fontSize: px(18), color: COLORS.muted },
-    el({ gap: px(10) }, el({ color: accent }, "$"), el({ color: COLORS.text }, `bunx deeplarp ${report.target}`)),
+    el({ gap: px(10) }, el({ color: accent }, "$"), el({ color: COLORS.text }, `npx deeplarp ${report.target}`)),
     el({}, new Date().toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })),
   );
 

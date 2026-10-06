@@ -57,7 +57,7 @@ Quips are deterministic rules (a `when` guard + a template, ordered most surpris
 - `--json` full report, `--no-llm`, `--model <m>`, `--fresh` (bypass the 24h cache).
 - Card flags, mirroring agent-wrapped: `--card [file.png|file.svg]`, `--layout wide|square|story`, `--theme auto|green|yellow|red|orange|violet|blue|magenta`, `--format png|svg|both`, `--handle <name>`. Any of them turns the card on.
 - Card is opt-in when scanning someone else and on by default in self mode.
-- Card layout matches agent-wrapped (changed 2026-10-06): terminal title bar and `$ bunx deeplarp <target>` line, score + archetype + the top two signals as the reason, quip as the accent headline, `›` receipts (2/4/6 by layout), tiles for repos scanned / contradicted / suspicious / credits. Square and story add per-group point bars, or on a clean profile (no group points) a "what backs it up" panel with one bar per credit that replaces the receipt list.
+- Card layout matches agent-wrapped (changed 2026-10-06): terminal title bar and `$ npx deeplarp <target>` line, score + archetype + the top two signals as the reason, quip as the accent headline, `›` receipts (2/4/6 by layout), tiles for repos scanned / contradicted / suspicious / credits. Square and story add per-group point bars, or on a clean profile (no group points) a "what backs it up" panel with one bar per credit that replaces the receipt list.
 
 ## Stack
 
