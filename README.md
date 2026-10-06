@@ -77,6 +77,7 @@ npx deeplarp someuser --card --layout story --theme red
 | `--card [file]` | write a card to file.png or file.svg |
 | `--layout` | wide, square, story |
 | `--theme` | auto, green, yellow, red, orange, violet, blue, magenta |
+| `--palette` | path to a swatch-style `palette.toml`; its `[roles]` set the card colours and its accent wins over `--theme` |
 | `--format` | png, svg, both |
 | `--handle <name>` | name on the card |
 

@@ -2,6 +2,8 @@
 // Run with `bun test`.
 
 import { test, expect } from "bun:test";
+import { writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { isFresh, manifestPaths, rateLimitMessage, type RepoData, type ProfileData, type ProfileRepo, type Commit } from "./gh";
 import {
   scanRepo, logicLines, claimedLanguages, llmDependencies, regexClaims,
@@ -11,7 +13,7 @@ import { scoreSignals, archetypeFor, quipFor, fixesFor, SUSPICION_CAP } from "./
 import { pickRepos, npcReason, mapLimited, showcase, type Report } from "./report";
 import { parseStory, buildPrompt } from "./llm";
 import { normaliseArgs, cardPaths, formatReport } from "./cli";
-import { renderCard, renderSvg, accentFor, creditBars } from "./card";
+import { renderCard, renderSvg, accentFor, creditBars, paletteFromToml } from "./card";
 
 function repo(overrides: Partial<RepoData> = {}): RepoData {
   return {
@@ -492,6 +494,17 @@ test("theme: auto follows the score, named themes override, unknown ones throw",
   expect(accentFor({ ...r, score: 80 }, "auto")).toBe("#ff5c39");
   expect(accentFor(r, "violet")).toBe("#a78bfa");
   expect(() => accentFor(r, "plaid")).toThrow("Unknown theme");
+});
+
+test("palette.toml: [roles] map onto card colours, other sections are ignored", async () => {
+  const path = `${tmpdir()}/deeplarp-palette.toml`;
+  writeFileSync(path, `[meta]\nname = "x"\n\n[roles]\nbase = "#0b1216"\nsurface = "#141e24"\naccent  = "#3fa39a"\n\n[extras]\ntext = "#ffffff"\n`);
+  const palette = paletteFromToml(path);
+  expect(palette.accent).toBe("#3fa39a");
+  expect(palette.colors).toEqual({ base: "#0b1216", bar: "#141e24", panel: "#141e24" });
+  const svg = await renderSvg(fakeReport(false), { layout: "wide", theme: "auto", palette });
+  expect(svg).toContain("#0b1216");
+  expect(svg).toContain("#3fa39a");
 });
 
 test("credit bars read the number each credit receipt starts with", () => {

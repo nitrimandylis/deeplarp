@@ -5,7 +5,7 @@ import { parseArgs } from "node:util";
 import { realpathSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { scan, TOP_BY_STARS, type Report } from "./report";
-import { renderCard, renderSvg, LAYOUTS, THEMES, type CardOptions, type Layout } from "./card";
+import { renderCard, renderSvg, paletteFromToml, LAYOUTS, THEMES, type CardOptions, type Layout } from "./card";
 import { DEFAULT_MODEL } from "./llm";
 
 const USAGE = `usage: deeplarp [user | owner/repo] [options]
@@ -30,6 +30,8 @@ card (on by default for yourself; any card option turns it on for others):
   --layout <l>    ${LAYOUTS.join(" | ")}                      (default: wide)
   --theme <t>     ${THEMES.join(" | ")}
                   (default: auto, picked by the score)
+  --palette <f>   card colours from a swatch-style palette.toml ([roles]);
+                  its accent wins over --theme
   --format <f>    png | svg | both                            (default: png)
   --handle <name> name on the card (default: the target)`;
 
@@ -132,6 +134,7 @@ async function main(): Promise<void> {
       model: { type: "string", default: DEFAULT_MODEL },
       layout: { type: "string" },
       theme: { type: "string" },
+      palette: { type: "string" },
       format: { type: "string" },
       handle: { type: "string" },
       repos: { type: "string" },
@@ -158,8 +161,9 @@ async function main(): Promise<void> {
   if (!LAYOUTS.includes(layout)) throw new Error(`Unknown layout "${layout}". Pick one of: ${LAYOUTS.join(", ")}`);
   if (!FORMATS.includes(format)) throw new Error(`Unknown format "${format}". Pick one of: ${FORMATS.join(", ")}`);
   if (!THEMES.includes(theme)) throw new Error(`Unknown theme "${theme}". Pick one of: ${THEMES.join(", ")}`);
-  const cardOptions: CardOptions = { layout, theme, handle: values.handle };
-  const cardFlagUsed = [values.card, values.layout, values.theme, values.format, values.handle].some((v) => v !== undefined);
+  const palette = values.palette === undefined ? undefined : paletteFromToml(values.palette);
+  const cardOptions: CardOptions = { layout, theme, handle: values.handle, palette };
+  const cardFlagUsed = [values.card, values.layout, values.theme, values.palette, values.format, values.handle].some((v) => v !== undefined);
 
   let repoLimit = TOP_BY_STARS;
   if (values.repos !== undefined) {

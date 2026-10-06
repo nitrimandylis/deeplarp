@@ -36,7 +36,7 @@ const ACCENTS: Record<string, string> = {
 };
 export const THEMES = ["auto", ...Object.keys(ACCENTS)];
 
-const COLORS = {
+const DEFAULT_COLORS = {
   base: "#0b0d12",
   bar: "#11141a",
   panel: "#11141a",
@@ -47,6 +47,38 @@ const COLORS = {
   track: "#1c2029",
   credit: "#5ccf8a",
 };
+type Colors = typeof DEFAULT_COLORS;
+
+// A custom palette from --palette: card colours to override, plus an optional accent
+// that wins over --theme.
+export type Palette = { colors: Partial<Colors>; accent?: string };
+
+// Reads the [roles] section of a swatch-style palette.toml, the same format
+// agent-wrapped takes. Only `key = "#hex"` lines are read; other sections are skipped.
+export function paletteFromToml(path: string): Palette {
+  const roles: Record<string, string> = {};
+  let inRoles = false;
+  for (const raw of readFileSync(path, "utf8").split("\n")) {
+    const line = raw.trim();
+    if (line.startsWith("[")) {
+      inRoles = line === "[roles]";
+      continue;
+    }
+    if (!inRoles) continue;
+    const match = line.match(/^(\w+)\s*=\s*"(#[0-9a-fA-F]{3,8})"/);
+    if (match) roles[match[1]!] = match[2]!;
+  }
+  if (Object.keys(roles).length === 0) throw new Error(`${path}: no colours found under [roles]`);
+
+  // One swatch role can fill several card slots. Missing roles keep the default.
+  const colors: Partial<Colors> = {};
+  if (roles.base) colors.base = roles.base;
+  if (roles.surface) colors.bar = colors.panel = roles.surface;
+  if (roles.overlay) colors.border = colors.track = roles.overlay;
+  if (roles.text) colors.text = roles.text;
+  if (roles.muted) colors.muted = colors.dim = roles.muted;
+  return { colors, accent: roles.accent };
+}
 
 // Short names for the signal table in PRODUCT.md, used in the reason line.
 const SIGNAL_NAMES: Record<string, string> = {
@@ -62,7 +94,7 @@ const SIGNAL_NAMES: Record<string, string> = {
   P2: "merged PRs",
 };
 
-export type CardOptions = { layout: Layout; theme: string; handle?: string };
+export type CardOptions = { layout: Layout; theme: string; handle?: string; palette?: Palette };
 export const DEFAULT_CARD: CardOptions = { layout: "wide", theme: "auto" };
 
 // Minimal element builder for satori (it wants React-shaped objects, not JSX).
@@ -78,7 +110,7 @@ export function accentFor(report: Report, theme: string): string {
     if (!accent) throw new Error(`Unknown theme "${theme}". Pick one of: ${THEMES.join(", ")}`);
     return accent;
   }
-  if (report.score === null || report.archetype === "Unproven") return COLORS.muted;
+  if (report.score === null || report.archetype === "Unproven") return DEFAULT_COLORS.muted;
   if (report.score >= 75) return ACCENTS.red!;
   if (report.score >= 20) return ACCENTS.yellow!;
   return ACCENTS.green!;
@@ -128,7 +160,8 @@ export function creditBars(report: Report): { label: string; value: number; unit
 export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD): El {
   const canvas = CANVASES[options.layout];
   const px = (n: number) => Math.round(n * canvas.scale);
-  const accent = accentFor(report, options.theme);
+  const COLORS = { ...DEFAULT_COLORS, ...options.palette?.colors };
+  const accent = options.palette?.accent ?? accentFor(report, options.theme);
   const counts = tierCounts(report);
   const handle = options.handle ?? report.target;
 
