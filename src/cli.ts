@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 import { scan, TOP_BY_STARS, type Report } from "./report";
 import { renderCard, renderSvg, paletteFromToml, LAYOUTS, THEMES, type CardOptions, type Layout } from "./card";
 import { DEFAULT_MODEL } from "./llm";
+// The bundler inlines this at build time, so dist/cli.js never reads package.json.
+import { version } from "../package.json";
 
 const USAGE = `usage: deeplarp [user | owner/repo] [options]
 
@@ -23,6 +25,7 @@ options:
   --all           profiles: scan every non-fork repo (slow, ~5 api calls per repo)
   --fresh         ignore the 24h cache
   -h, --help      show this help
+  -v, --version   print the version
 
 card (on by default for yourself; any card option turns it on for others):
   --card [file]   write a card to file.png or file.svg
@@ -141,12 +144,17 @@ async function main(): Promise<void> {
       all: { type: "boolean", default: false },
       fresh: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
+      version: { type: "boolean", short: "v", default: false },
     },
     allowPositionals: true,
   });
 
   if (values.help) {
     console.log(USAGE);
+    return;
+  }
+  if (values.version) {
+    console.log(version);
     return;
   }
   if (positionals.length > 1) {

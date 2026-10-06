@@ -74,6 +74,7 @@ npx deeplarp someuser --card --layout story --theme red
 | `--model <m>` | model for the `claude -p` pass (default: haiku) |
 | `--repos <n>` / `--all` | scan the top n repos, or every non-fork repo (slow) |
 | `--fresh` | ignore the 24h cache in `~/.deeplarp/cache` |
+| `-v, --version` | print the version |
 | `--card [file]` | write a card to file.png or file.svg |
 | `--layout` | wide, square, story |
 | `--theme` | auto, green, yellow, red, orange, violet, blue, magenta |
