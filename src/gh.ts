@@ -223,7 +223,7 @@ export type ProfileData = {
   bio: string | null;
   createdAt: string;
   pinned: string[]; // full names, in pinned order
-  repos: ProfileRepo[]; // owned repos, most stars first, up to 100
+  repos: ProfileRepo[]; // owned repos, most stars first, up to 100 (every one with `all`)
   mergedPrsElsewhere: number; // merged PRs into repos the user doesn't own
   fetchedAt: string;
 };
@@ -235,9 +235,21 @@ query($login: String!, $prQuery: String!) {
     pinnedItems(first: 6, types: REPOSITORY) { nodes { ... on Repository { nameWithOwner } } }
     repositories(first: 100, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}) {
       nodes { nameWithOwner isFork stargazerCount createdAt pushedAt }
+      pageInfo { hasNextPage endCursor }
     }
   }
   search(query: $prQuery, type: ISSUE) { issueCount }
+}`;
+
+// The next 100 repos after `after`, for --all on accounts with more than 100.
+const REPOS_PAGE_QUERY = `
+query($login: String!, $after: String!) {
+  user(login: $login) {
+    repositories(first: 100, after: $after, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}) {
+      nodes { nameWithOwner isFork stargazerCount createdAt pushedAt }
+      pageInfo { hasNextPage endCursor }
+    }
+  }
 }`;
 
 // Recent commits for every non-fork repo. Asking for all 100 repos' history in one
@@ -303,9 +315,10 @@ async function fetchCommitsByRepo(fullNames: string[]): Promise<Map<string, Comm
 }
 
 // The whole profile in two rounds of GraphQL: bio, pinned, repo list and merged PR
-// count first, then 1-4 parallel batches of recent commits.
-export async function fetchProfile(login: string, fresh = false): Promise<ProfileData> {
-  const key = "user/" + login.toLowerCase();
+// count first, then 1-4 parallel batches of recent commits. `all` keeps paging past
+// the first 100 repos, and is cached separately so a normal scan stays cheap.
+export async function fetchProfile(login: string, fresh = false, all = false): Promise<ProfileData> {
+  const key = "user/" + login.toLowerCase() + (all ? "-all" : "");
   if (!fresh) {
     const cached = readCache<ProfileData>(key);
     if (cached) return cached;
@@ -315,7 +328,14 @@ export async function fetchProfile(login: string, fresh = false): Promise<Profil
   const data = await ghGraphql(PROFILE_QUERY, { login, prQuery });
   const user = data.user;
   if (!user) throw new Error(`Not a GitHub user: ${login}`);
-  const ownRepos = user.repositories.nodes.filter((n: any) => !n.isFork).map((n: any) => n.nameWithOwner);
+  const repoNodes: any[] = [...user.repositories.nodes];
+  let page = user.repositories.pageInfo;
+  while (all && page.hasNextPage) {
+    const next = await ghGraphql(REPOS_PAGE_QUERY, { login, after: page.endCursor });
+    repoNodes.push(...next.user.repositories.nodes);
+    page = next.user.repositories.pageInfo;
+  }
+  const ownRepos = repoNodes.filter((n: any) => !n.isFork).map((n: any) => n.nameWithOwner);
   const commits = await fetchCommitsByRepo(ownRepos);
 
   const profile: ProfileData = {
@@ -325,7 +345,7 @@ export async function fetchProfile(login: string, fresh = false): Promise<Profil
     bio: user.bio,
     createdAt: user.createdAt,
     pinned: user.pinnedItems.nodes.map((n: any) => n.nameWithOwner),
-    repos: user.repositories.nodes.map((n: any) => ({
+    repos: repoNodes.map((n: any) => ({
       fullName: n.nameWithOwner,
       isFork: n.isFork,
       stars: n.stargazerCount,

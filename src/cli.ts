@@ -3,14 +3,14 @@
 
 import { parseArgs } from "node:util";
 import { writeFileSync } from "node:fs";
-import { scan, type Report } from "./report";
+import { scan, TOP_BY_STARS, type Report } from "./report";
 import { renderCard, renderSvg, LAYOUTS, THEMES, type CardOptions, type Layout } from "./card";
 import { DEFAULT_MODEL } from "./llm";
 
 const USAGE = `usage: deeplarp [user | owner/repo] [options]
 
   no target       scan your own profile (the gh login), with a fix list and a card
-  user            scan a profile: pinned repos + top 20 by stars
+  user            scan a profile: pinned repos + top ${TOP_BY_STARS} by stars
   owner/repo      scan one repo
 
 options:
@@ -18,6 +18,8 @@ options:
   --no-llm        skip the claude -p pass. Same score, regex claims, template quip
   --model <m>     model for the claude -p pass: haiku, sonnet, opus or a full id
                   (default: ${DEFAULT_MODEL})
+  --repos <n>     profiles: scan the top n repos by stars    (default: ${TOP_BY_STARS})
+  --all           profiles: scan every non-fork repo (slow, ~5 api calls per repo)
   --fresh         ignore the 24h cache
   -h, --help      show this help
 
@@ -131,6 +133,8 @@ async function main(): Promise<void> {
       theme: { type: "string" },
       format: { type: "string" },
       handle: { type: "string" },
+      repos: { type: "string" },
+      all: { type: "boolean", default: false },
       fresh: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
     },
@@ -156,7 +160,14 @@ async function main(): Promise<void> {
   const cardOptions: CardOptions = { layout, theme, handle: values.handle };
   const cardFlagUsed = [values.card, values.layout, values.theme, values.format, values.handle].some((v) => v !== undefined);
 
-  const report = await scan(positionals[0] ?? null, { fresh: values.fresh, llm: !values["no-llm"], model: values.model });
+  let repoLimit = TOP_BY_STARS;
+  if (values.repos !== undefined) {
+    repoLimit = Number(values.repos);
+    if (!Number.isInteger(repoLimit) || repoLimit < 1) throw new Error(`--repos needs a whole number above 0, got "${values.repos}"`);
+  }
+  if (values.all) repoLimit = Infinity;
+
+  const report = await scan(positionals[0] ?? null, { fresh: values.fresh, llm: !values["no-llm"], model: values.model, repos: repoLimit });
 
   if (values.json) console.log(JSON.stringify(report, null, 2));
   else console.log(formatReport(report));

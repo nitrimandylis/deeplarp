@@ -19,9 +19,10 @@ export type Report = Score & {
   apiCalls: number;
 };
 
-export type ScanOptions = { fresh?: boolean; llm?: boolean; model?: string };
+// repos: how many top-by-stars repos to scan on a profile. Infinity scans every one.
+export type ScanOptions = { fresh?: boolean; llm?: boolean; model?: string; repos?: number };
 
-const TOP_BY_STARS = 20;
+export const TOP_BY_STARS = 20;
 // GitHub's secondary rate limit trips on bursts, so repos are fetched a few at a time.
 const FETCH_CONCURRENCY = 10;
 const NPC_MIN_REPOS = 3;
@@ -29,8 +30,8 @@ const NPC_MIN_DAYS = 30;
 // Claims live near the top of a README. Further down is usually docs or quoted lists.
 const CLAIM_CHARS = 2000;
 
-// Pinned repos first, then the top 20 by stars that aren't pinned. Forks are skipped.
-export function pickRepos(profile: ProfileData): string[] {
+// Pinned repos first, then the top `limit` by stars that aren't pinned. Forks are skipped.
+export function pickRepos(profile: ProfileData, limit: number = TOP_BY_STARS): string[] {
   const forks = new Set(profile.repos.filter((r) => r.isFork).map((r) => r.fullName));
   const picked: string[] = [];
 
@@ -40,7 +41,7 @@ export function pickRepos(profile: ProfileData): string[] {
   // profile.repos is already sorted by stars.
   let added = 0;
   for (const repo of profile.repos) {
-    if (added === TOP_BY_STARS) break;
+    if (added >= limit) break;
     if (repo.isFork || picked.includes(repo.fullName)) continue;
     picked.push(repo.fullName);
     added++;
@@ -118,8 +119,10 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
     owner = repo.fullName.split("/")[0]!;
   } else {
     kind = "profile";
-    const profile = await fetchProfile(resolved, fresh);
-    repos = await mapLimited(pickRepos(profile), FETCH_CONCURRENCY, (name) => fetchRepo(name, fresh));
+    const limit = options.repos ?? TOP_BY_STARS;
+    // Over 100 repos needs the paged repo list; the first page covers everything else.
+    const profile = await fetchProfile(resolved, fresh, limit > 100);
+    repos = await mapLimited(pickRepos(profile, limit), FETCH_CONCURRENCY, (name) => fetchRepo(name, fresh));
     const shown = showcase(profile);
     for (const repo of repos) {
       for (const signal of scanRepo(repo)) {

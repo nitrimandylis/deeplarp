@@ -394,6 +394,8 @@ test("repo pick: pinned first, then the top 20 by stars, no forks", () => {
   const many = profile({ repos: Array.from({ length: 30 }, (_, i) => r(`u/r${i}`)) });
   expect(pickRepos(many).length).toBe(20);
   expect(pickRepos(many)[19]).toBe("u/r19");
+  expect(pickRepos(many, 5).length).toBe(5);
+  expect(pickRepos(many, Infinity).length).toBe(30);
 });
 
 test("showcase: pinned repos, else the top 6 GitHub shows as Popular", () => {
