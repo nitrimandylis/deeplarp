@@ -19,7 +19,7 @@ export type Signal = {
 const CODE_EXTENSIONS = [
   ".ts", ".tsx", ".js", ".jsx", ".mjs", ".py", ".go", ".rs", ".java", ".kt", ".swift",
   ".c", ".h", ".cpp", ".hpp", ".cc", ".cs", ".rb", ".php", ".scala", ".zig", ".ex",
-  ".hs", ".ml", ".dart", ".lua", ".jl", ".vue", ".svelte",
+  ".hs", ".ml", ".dart", ".lua", ".jl", ".vue", ".svelte", ".sol", ".r", ".R", ".sh",
 ];
 const IGNORED_DIRS = ["node_modules/", "vendor/", "dist/", "build/", ".next/", "third_party/"];
 
@@ -27,15 +27,21 @@ const IGNORED_DIRS = ["node_modules/", "vendor/", "dist/", "build/", ".next/", "
 // Swap for real line counts if calibration shows this misjudges minified or generated code.
 const BYTES_PER_LINE = 40;
 
+// ponytail: notebooks are JSON with embedded outputs (plots, tables), so most of their
+// bytes aren't code. A 10x discount is a guess. Count code cells if notebooks misjudge.
+const NOTEBOOK_BYTES_PER_LINE = 400;
+
 export function logicLines(repo: RepoData): number {
+  // HTML is left out on purpose: an "AI-powered" repo that is one index.html has no code.
   let bytes = 0;
+  let notebookBytes = 0;
   for (const file of repo.files) {
     if (IGNORED_DIRS.some((dir) => file.path.includes(dir))) continue;
     if (file.path.includes(".min.")) continue;
-    if (!CODE_EXTENSIONS.some((ext) => file.path.endsWith(ext))) continue;
-    bytes += file.size;
+    if (file.path.endsWith(".ipynb")) notebookBytes += file.size;
+    else if (CODE_EXTENSIONS.some((ext) => file.path.endsWith(ext))) bytes += file.size;
   }
-  return Math.round(bytes / BYTES_PER_LINE);
+  return Math.round(bytes / BYTES_PER_LINE + notebookBytes / NOTEBOOK_BYTES_PER_LINE);
 }
 
 export function wordCount(text: string): number {
@@ -95,7 +101,8 @@ const LLM_SDKS_PY = [
 // (?<!-) skips "cross-platform", "multi-agent" style compounds.
 // "platform", "framework" and a bare "engine" mostly name someone else's product
 // (Vercel's platform, React the framework, a game engine), so only "AI engine" counts.
-const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|agents?|AI engine|intelligent)\b/i;
+// A bare "agent" is out too: an agent built on an SDK is an accurate description.
+const BIG_CLAIM = /(?<!-)\b(AI[- ]powered|autonomous|agentic|AI engine|intelligent)\b/i;
 // Marketing claims: the pitch words that promise a finished, serious product.
 const HYPE_CLAIM = /\b(production[- ]ready|enterprise[- ]grade|world'?s first|revolutionary|next[- ]generation|cutting[- ]edge|state[- ]of[- ]the[- ]art|AI[- ](?:powered|driven))\b/i;
 // A repo that calls itself a wrapper is being honest about it.
@@ -241,8 +248,12 @@ export function templateFingerprint(repo: RepoData): Signal | null {
 
 // Claim word (lowercase) -> GitHub language names that satisfy it.
 const LANGUAGES: Record<string, string[]> = {
-  rust: ["Rust"], go: ["Go"], golang: ["Go"], "c++": ["C++"], "c#": ["C#"], c: ["C"],
-  python: ["Python"], typescript: ["TypeScript", "JavaScript"], javascript: ["JavaScript", "TypeScript"],
+  rust: ["Rust"], go: ["Go"], golang: ["Go"], "c++": ["C++", "Cuda"], "c#": ["C#"], c: ["C"],
+  // Notebooks hold Python, and .vue/.svelte/.astro files hold the TS/JS, but GitHub
+  // counts them under their own names. CUDA is C++ with extensions.
+  python: ["Python", "Jupyter Notebook"],
+  typescript: ["TypeScript", "JavaScript", "Vue", "Svelte", "Astro"],
+  javascript: ["JavaScript", "TypeScript", "Vue", "Svelte", "Astro"],
   java: ["Java"], kotlin: ["Kotlin"], swift: ["Swift"], zig: ["Zig"], haskell: ["Haskell"],
   elixir: ["Elixir"], ruby: ["Ruby"], scala: ["Scala"], ocaml: ["OCaml"], julia: ["Julia"], dart: ["Dart"],
 };

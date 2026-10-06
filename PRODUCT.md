@@ -18,7 +18,7 @@ Decided in a grill session on 2026-10-05.
 | # | Signal | Group | Tier |
 |---|---|---|---|
 | 1 | README words vs lines of logic | Tutorial | suspicious |
-| 2 | LLM wrapper: claims engine/model/agent, logic is mostly SDK calls | Wrapper | contradicted |
+| 2 | LLM wrapper: claims "agentic", "autonomous", "AI engine", "AI-powered" or "intelligent", logic is mostly SDK calls. A bare "agent" doesn't count (an agent on an SDK is an accurate description) | Wrapper | contradicted |
 | 3 | Empty claim: hype words ("production-ready", "world's first", "AI-powered"...) in the pitch, under 50 lines of code. Skips docs/list repos, profile READMEs, third-party write-ups | Wrapper | contradicted |
 | 4 | Template fingerprint (create-next-app/Vite defaults, tutorial names) | Tutorial | suspicious, contradicted if it claims "from scratch" |
 | 5 | Claimed stack vs GitHub language breakdown | Wrapper | contradicted |
@@ -30,7 +30,9 @@ Decided in a grill session on 2026-10-05.
 
 A signal that fires on more than one repo adds half its weight per extra repo (3 empty-claim repos: 35 + 18 + 18 = 71). Repos that label themselves a learning exercise ("practice project", "course project", "bootcamp", "followed a tutorial", or practice/assignment/tutorial in the name) skip signals 1, 6 and suspicious 4. A "from scratch" claim over template files still counts.
 
-Credits are floored at -20 in total, so tests and PRs can't erase a contradiction.
+Credits only offset suspicious Wrapper and Tutorial points, and at most -20 in total. Contradicted signals and Farmer signals always count in full: tests in one repo don't undo a painted graph or an empty claim in another (changed 2026-10-06; before, -20 of credit could hide a 35-point contradiction).
+
+Lines of code are file bytes / 40, notebooks (`.ipynb`) at bytes / 400 because most of their bytes are outputs. `.sol`, `.r`, `.sh` count as code. HTML doesn't: an "AI-powered" repo that is one `index.html` has no code.
 
 Cut on purpose: star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).
 
@@ -75,16 +77,17 @@ Bun + TypeScript. Plain `fetch` for GitHub REST and GraphQL. Token from `gh auth
 
 Local commits only until v1 is done. Publish after.
 
-## Status (2026-10-05)
+## Status (2026-10-06)
 
 Steps 1-9 done. Step 10 (publish) not started.
 
 - Real-world pass (2026-10-05): 60 profiles. 17 working devs (contributors ranked 15 to 30 on next.js, react, deno, ruff, tailwind, django): all Real One or NPC. 10 "AI founder"-style bios: all Real One after fixes. 27 clone/hype repo owners: 10 Real One (each backed by real tests or merged PRs), 10 Unproven, 2 Tutorial Graduate, 4 NPC, 1 org (not scannable). Owners of LLM-wrapper repos: Wrapper Founder, 50/100. Fixes from it: fork padding needs half the profile, self-declared SDKs/wrappers skip signal 2, template tests and CI-only no longer earn P1, template weight 15 -> 20, Unproven archetype.
 - Hype-repo pass (2026-10-05): 35 low-star repos found by "enterprise-grade", "production-ready", "world's first". Added signal 3 after finding repos that pitch a product with zero code, including one profile with 3 "AI engine" repos made of 354 empty source files. Manifests are now read up to 2 folders deep. Empty test files no longer earn P1. Re-ran all groups: no new flags on working devs.
-- Calibration: 28/30 on `fixtures.json` (15 Real Ones, 15 self-declared graph painters). Both misses (pavsap, xtropi) come out Portfolio Speedrunner: they also have template repos, so Tutorial reaches 60%+ of Farmer.
+- Calibration: 66/67 on `fixtures.json` (15 famous Real Ones, 15 self-declared graph painters, and 37 profiles recovered from the real-world pass: 17 working devs, 10 AI-founder bios, 10 clone-repo owners with real tests or PRs). The one miss (xtropi) comes out Portfolio Speedrunner because it also has a template repo, which is arguably right. Wrapper and Tutorial archetypes still have no fixtures, so signals 1-6 have no measured accuracy.
 - What calibration changed: signal 8 as first written (author vs committer date) caught almost no painters, because painting scripts set both dates. It now checks dates against the repo's creation date and needs a scripted pattern. Version-bump runs are excluded.
 - Wrapper and Tutorial archetypes have no public fixtures yet (by design, they go in `fixtures.local.json`). Nick's own profile still needs a label there.
 - Budget: see decision 3. Repo fetches run 10 at a time to stay under GitHub's per-minute limit.
+- Credit and line-count pass (2026-10-06): credits stopped offsetting contradicted and Farmer signals, notebooks count as code, stack claims accept Jupyter Notebook (Python), Vue/Svelte/Astro (TS/JS) and Cuda (C++), bare "agent" dropped from signal 2. Effect on the real-world set: prophen (honest Q&A agent on the AI SDK) stays Real One only because of the "agent" change. Damianwojownik (a "world's first AI-powered RPG" pitch with no code) went from hidden to Wrapper Founder 35. Counting HTML as code was tried and dropped: it let a one-`index.html` "AI-powered GNN" repo escape signal 3 and rescued nobody.
 - 20-repo pass (2026-10-05): widening from 4 to 20 repos first flagged simonw (100) and gnoff (61, React core) and dropped calibration to 25/30. Causes: TIL/workshop/research repos, plugins, bug-repro repos from create-next-app, vague "platform/framework/engine" claims. Fixed with the showcase rule, docs-type and scratch-name exemptions, plugin/extension as self-declared wrappers, and "AI engine" only. Back to 29/30, all 17 working devs Real One or NPC, known larpers still caught.
 
 ## Landscape

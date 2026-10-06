@@ -25,7 +25,8 @@ const REPEAT_SHARE = 0.5;
 const MAX_REPEATS = 3;
 
 // Credits lower the score but can't launder a contradiction: tests in one repo don't
-// undo a painted graph in another. Total credit is floored at this.
+// undo a painted graph or an empty "production-ready" claim in another. So credits only
+// offset suspicious Wrapper and Tutorial points, and never more than this in total.
 export const MAX_CREDIT = -20;
 
 // Suspicion alone can't reach the top band. It needs at least one contradicted signal.
@@ -119,10 +120,22 @@ export function archetypeFor(score: number, groups: Record<Group, number>, hasCr
   return SINGLES[top];
 }
 
-// Trims credit points so they add up to at most MAX_CREDIT, biggest credit first.
+// Points credits are allowed to cancel: suspicious Wrapper and Tutorial signals only.
+function offsettable(s: ScoredSignal): boolean {
+  return s.tier === "suspicious" && (s.group === "Wrapper" || s.group === "Tutorial");
+}
+
+// The most credit can take off: MAX_CREDIT, or less when there's less to offset.
+export function creditFloor(signals: ScoredSignal[]): number {
+  let points = 0;
+  for (const s of signals) if (offsettable(s)) points += s.points;
+  return Math.max(MAX_CREDIT, -points);
+}
+
+// Trims credit points so they add up to at most the credit floor, biggest credit first.
 // The receipts then show the points the score really used.
 export function applyCreditFloor(signals: ScoredSignal[]): void {
-  let room = MAX_CREDIT;
+  let room = creditFloor(signals);
   for (const s of signals) {
     if (s.group !== "credit") continue;
     s.points = Math.max(s.points, room);
@@ -134,7 +147,7 @@ export function applyCreditFloor(signals: ScoredSignal[]): void {
 function creditRoom(signals: ScoredSignal[]): number {
   let used = 0;
   for (const s of signals) if (s.group === "credit") used += s.points;
-  return MAX_CREDIT - used;
+  return creditFloor(signals) - used;
 }
 
 export function scoreSignals(signals: Signal[], npc = false): Score {

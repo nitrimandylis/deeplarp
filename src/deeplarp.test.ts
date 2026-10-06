@@ -76,6 +76,28 @@ test("rate limit messages: per-minute, hourly, and a plain 403 that isn't one", 
 
 // --- repo signals ---
 
+test("logic lines: notebooks at a tenth, HTML not at all", () => {
+  expect(logicLines(repo({ files: [{ path: "train.ipynb", size: 400_000 }, { path: "util.py", size: 4000 }] }))).toBe(1100);
+  expect(logicLines(repo({ files: [{ path: "index.html", size: 4000 }] }))).toBe(0);
+  expect(logicLines(repo({ files: [{ path: "Token.sol", size: 4000 }, { path: "run.sh", size: 400 }] }))).toBe(110);
+});
+
+test("an AI-powered notebook repo isn't empty, and 'built with Python' accepts notebooks", () => {
+  const r = repo({
+    description: "AI-powered churn prediction built with Python",
+    files: [{ path: "model.ipynb", size: 200_000 }],
+    languages: { "Jupyter Notebook": 200_000 },
+  });
+  expect(scanRepo(r)).toEqual([]);
+  expect(scanRepo(repo({ readme: "Built with TypeScript.", languages: { Vue: 9000, TypeScript: 500 } }))).toEqual([]);
+});
+
+test("a bare 'agent' isn't a big claim, 'agentic' still is", () => {
+  const manifests = { "package.json": JSON.stringify({ dependencies: { openai: "^4" } }) };
+  expect(scanRepo(repo({ description: "A Q&A agent for my archive", manifests }))).toEqual([]);
+  expect(ids(scanRepo(repo({ description: "An agentic planner", manifests })))).toBe("2:contradicted");
+});
+
 test("logic lines skip node_modules, minified and non-code files", () => {
   const r = repo({
     files: [
@@ -296,18 +318,29 @@ test("repeats add half the weight per extra repo, at the strongest tier", () => 
   expect(s.signals[0]!.receipts.length).toBe(4);
 });
 
-test("credits are floored at -20 so they can't erase a contradiction", () => {
-  const s = scoreSignals([signal("8", "contradicted", "Farmer"), signal("P1", "credit", "credit"), signal("P1", "credit", "credit", "a/2"), signal("P2", "credit", "credit")]);
-  expect(s.score).toBe(20);
-  expect(s.archetype).toBe("Contribution Farmer");
+test("credits only offset suspicious Wrapper and Tutorial points, up to -20", () => {
+  const credits = [signal("P1", "credit", "credit"), signal("P1", "credit", "credit", "a/2"), signal("P2", "credit", "credit")];
+  // A painted graph and an empty claim stay in full, whatever the credits.
+  const painter = scoreSignals([signal("8", "suspicious", "Farmer"), ...credits]);
+  expect(painter.score).toBe(20);
+  expect(painter.archetype).toBe("Contribution Farmer");
+  expect(scoreSignals([signal("3", "contradicted", "Wrapper"), ...credits]).score).toBe(35);
+  // Template leftovers (20) are fully offset.
+  const tutorial = scoreSignals([signal("4", "suspicious", "Tutorial"), ...credits]);
+  expect(tutorial.score).toBe(0);
+  expect(tutorial.archetype).toBe("Real One");
+  // Only the suspicious part is offset, and never more than 20.
+  expect(scoreSignals([signal("4", "suspicious", "Tutorial"), signal("1", "suspicious", "Tutorial"), signal("8", "contradicted", "Farmer"), ...credits]).score).toBe(55);
 });
 
 test("receipts show credit after the floor, so they add up to the score", () => {
   const p1 = ["a/1", "a/2", "a/3", "a/4"].map((where) => signal("P1", "credit", "credit", where)); // -10 -5 -5 -5
-  const s = scoreSignals([...p1, signal("P2", "credit", "credit")]);
-  expect(s.signals.map((x) => `${x.id}:${x.points}`).join(" ")).toBe("P1:-20 P2:0");
+  const s = scoreSignals([signal("4", "suspicious", "Tutorial"), signal("1", "suspicious", "Tutorial"), ...p1, signal("P2", "credit", "credit")]);
+  const credits = s.signals.filter((x) => x.group === "credit");
+  expect(credits.map((x) => `${x.id}:${x.points}`).join(" ")).toBe("P1:-20 P2:0");
+  expect(s.score).toBe(15);
   // Credit is full, so missing credits don't show up as fixes.
-  expect(fixesFor(s, "profile")).toEqual([]);
+  expect(fixesFor(s, "profile").some((f) => f.text.includes("tests") || f.text.includes("PR merged"))).toBe(false);
 });
 
 test("credits subtract and the score never goes below 0", () => {
@@ -342,8 +375,8 @@ test("the most surprising quip wins", () => {
 test("fix list is ordered by points and includes missing credits", () => {
   const s = scoreSignals([signal("1", "suspicious", "Tutorial"), signal("2", "contradicted", "Wrapper")]);
   const fixes = fixesFor(s, "profile");
-  // P1 is worth 10, then P2 only gets the 10 left under the -20 credit floor.
-  expect(fixes.map((f) => f.points)).toEqual([35, 15, 10, 10]);
+  // Credits can only offset signal 1's 15 points: P1 is worth 10, then P2 gets the 5 left.
+  expect(fixes.map((f) => f.points)).toEqual([35, 15, 10, 5]);
   expect(fixes[0]!.text).toContain("someone/thing");
   expect(fixesFor(s, "repo").some((f) => f.text.includes("PR merged"))).toBe(false);
 });
