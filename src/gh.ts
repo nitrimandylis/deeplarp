@@ -234,7 +234,7 @@ query($login: String!, $prQuery: String!) {
   user(login: $login) {
     login name bio createdAt
     pinnedItems(first: 6, types: REPOSITORY) { nodes { ... on Repository { nameWithOwner } } }
-    repositories(first: 100, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}) {
+    repositories(first: 100, ownerAffiliations: OWNER, privacy: PUBLIC, orderBy: {field: STARGAZERS, direction: DESC}) {
       nodes { nameWithOwner isFork stargazerCount createdAt pushedAt }
       pageInfo { hasNextPage endCursor }
     }
@@ -246,7 +246,7 @@ query($login: String!, $prQuery: String!) {
 const REPOS_PAGE_QUERY = `
 query($login: String!, $after: String!) {
   user(login: $login) {
-    repositories(first: 100, after: $after, ownerAffiliations: OWNER, orderBy: {field: STARGAZERS, direction: DESC}) {
+    repositories(first: 100, after: $after, ownerAffiliations: OWNER, privacy: PUBLIC, orderBy: {field: STARGAZERS, direction: DESC}) {
       nodes { nameWithOwner isFork stargazerCount createdAt pushedAt }
       pageInfo { hasNextPage endCursor }
     }

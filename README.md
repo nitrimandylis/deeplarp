@@ -80,7 +80,11 @@ npx deeplarp someuser --card --layout story --theme red
 | `--format` | png, svg, both |
 | `--handle <name>` | name on the card |
 
-A big profile costs about 150 API calls and 7-13 seconds, which works out to around 33 uncached scans an hour on one token.
+A big profile costs about 150 API calls and 7-13 seconds, which works out to around 33 uncached scans an hour on one token. Only public repos are scanned, including on your own profile, so the card never shows a private repo name.
+
+### 🤖 For agents
+
+[`deeplarp-cli/SKILL.md`](deeplarp-cli/SKILL.md) tells a coding agent how to drive it: the `--json` keys, what each run costs in API calls and seconds, when a PNG lands in the current directory, and why NPC isn't a 0. Every command runs unattended (nothing opens a picker or waits for input). Copy the folder into your agent's skills directory, for example `cp -R deeplarp-cli ~/.claude/skills/`.
 
 ## 🔩 Under the hood
 
