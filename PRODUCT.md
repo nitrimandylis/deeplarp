@@ -7,7 +7,7 @@ Decided in a grill session on 2026-10-05.
 ## Decisions
 
 1. **Audience: roast + self-audit.** Same engine. Scanning someone else gives a roast line. Scanning your own `gh` login gives a fix list ordered by points saved. Receipts only, never a verdict on intent.
-2. **Surface: CLI first, web later.** `bunx deeplarp <user|owner/repo>`. The core is plain functions (`scan() -> report`) that never touch the terminal. The web wrapper (Next.js + `next/og`) gets built once calibration passes (see 6).
+2. **Surface: CLI first, web later.** `bunx deeplarp <user|owner/repo>`. The core is plain functions (`scan() -> report`) that never touch the terminal. The web wrapper (Next.js + `next/og`) gets built once calibration passes (see 6). Its decisions are under Web.
 3. **Input: profile and repo.** `owner/repo` scans one repo. `user` runs the repo scan on pinned repos + top 20 by stars (`--repos <n>` changes the 20, `--all` scans every non-fork repo, paging past GitHub's 100-repo page), plus profile signals. Tutorial patterns (signals 1, 6, suspicious 4) only count on the showcase: pinned repos, or the 6 "Popular repositories" GitHub shows when nothing is pinned. Claims count on every repo. Budget (changed 2026-10-05 from 4 repos / 80 calls / 10s): about 150 API calls and 7-13 seconds for a big profile, so roughly 33 uncached profile scans per hour.
 4. **Judging: heuristics score, LLM narrates.** The score never depends on an LLM. `claude -p` (optional, `--model`, default haiku) extracts claims from the bio and README and rewrites the top quip. Without `claude` you get the same score with regex claims and template quips.
 5. **Scoring: weighted sum + evidence tiers.** Every signal is `suspicious` or `contradicted`. The top band (75-100) needs at least one contradicted signal, so suspicion alone caps at 74. Positive evidence subtracts.
@@ -94,6 +94,37 @@ All 10 steps done. Published 2026-10-06: github.com/nitrimandylis/deeplarp (publ
 - Budget: see decision 3. Repo fetches run 10 at a time to stay under GitHub's per-minute limit.
 - Credit and line-count pass (2026-10-06): credits stopped offsetting contradicted and Farmer signals, notebooks count as code, stack claims accept Jupyter Notebook (Python), Vue/Svelte/Astro (TS/JS) and Cuda (C++), bare "agent" dropped from signal 2. Effect on the real-world set: prophen (honest Q&A agent on the AI SDK) stays Real One only because of the "agent" change. Damianwojownik (a "world's first AI-powered RPG" pitch with no code) went from hidden to Wrapper Founder 35. Counting HTML as code was tried and dropped: it let a one-`index.html` "AI-powered GNN" repo escape signal 3 and rescued nobody.
 - 20-repo pass (2026-10-05): widening from 4 to 20 repos first flagged simonw (100) and gnoff (61, React core) and dropped calibration to 25/30. Causes: TIL/workshop/research repos, plugins, bug-repro repos from create-next-app, vague "platform/framework/engine" claims. Fixed with the showcase rule, docs-type and scratch-name exemptions, plugin/extension as self-declared wrappers, and "AI engine" only. Back to 29/30, all 17 working devs Real One or NPC, known larpers still caught.
+
+## Web
+
+Decided in a grill session on 2026-10-11. Live at `deeplarp.nicktrim.com` (one `SITE_URL` constant).
+
+1. **Live scanner.** Report pages mirror GitHub paths: `/<user>` and `/<owner>/<repo>`, so swapping `github.com` for the domain works. Only `/` and `/api` are reserved.
+2. **Token: a fine-grained PAT, public repos read-only, no scopes**, as `GITHUB_TOKEN` in Vercel. No OAuth. Ceiling is about 33 fresh profile scans an hour; add "Sign in with GitHub" as a fallback only if the busy message actually shows up.
+3. **Cache: Next.js `"use cache"`, 24h**, matching the CLI TTL. No Upstash or other store. Per-IP limits are a Vercel Firewall rule (no code). The remaining budget comes from GitHub's `x-ratelimit-remaining` header.
+4. **Layout: `web/` in this repo**, importing `../src` directly, Vercel root directory `web`. The npm tarball is unaffected. Core changes: no file cache on the server (Vercel's filesystem is read-only), and `GITHUB_TOKEN` wins over `gh auth token` when set, so local `next dev` never uses a token that sees private repos.
+5. **No LLM.** Regex claims and template quips, same score. No per-scan cost, no key, no prompt injection from strangers' READMEs.
+6. **Wait state.** A Suspense fallback shows the terminal prompt, a blinking cursor and "scanning up to 20 repos, about 10s". No fake progress steps.
+7. **Card.** The OG image is `cardLayout(report)` (wide, 1200x630) through `next/og`. `/api/card?target=&layout=&theme=` serves wide, square and story downloads, with a theme picker on the page. No `--palette`.
+8. **Report page.** Roast and receipts first, the fix list in a collapsed `<details>` ("Is this you?").
+9. **Rescan.** A button on reports older than 1 hour, done with `revalidateTag`.
+10. **Home page.** One input (`user`, `owner/repo` or a pasted github.com URL), Nick's own card as the example, the `npx deeplarp` line and the URL-swap tip. No "famous scans" strip.
+11. **Privacy.** Report pages are `noindex` and left out of the sitemap. Opt-out is a hardcoded `OPTED_OUT` list, requested through a GitHub issue.
+12. **Look.** A terminal aesthetic built from the card's tokens (`#0b0d12`, accent by score) and fonts (JetBrains Mono, Press Start 2P from `assets/`). One `frontend-design` pass with the card as the brief. shadcn is initialized but only a re-themed Input and Button get used.
+13. **Errors.** Unknown target: 404. NPC: no score plus the reason. Org: "try one of its repos". Out of budget: "busy, try in N min" from the reset header; cached pages keep working.
+
+Stack: Bun, latest Next.js (App Router), Tailwind, shadcn. `outputFileTracingRoot` at the repo root so `../src` and `../assets` get bundled. One check: the target parser (user, owner/repo, URL, reserved and opted-out names).
+
+### Web build order
+
+1. Core fixes (server cache off, token order)
+2. `web/` scaffold, target parser + check
+3. Report page with `"use cache"`, Suspense wait state, error states
+4. OG image + `/api/card` + theme picker
+5. Rescan, `noindex`, `OPTED_OUT`
+6. Home page
+7. `frontend-design` pass
+8. Vercel project (root `web`), PAT, Firewall rule, domain
 
 ## Landscape
 
