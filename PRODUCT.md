@@ -128,7 +128,7 @@ Stack: Bun, latest Next.js (App Router), Tailwind, shadcn. `outputFileTracingRoo
 
 ### Web status (2026-10-15)
 
-Steps 1-7 done, step 8 (Vercel setup) is Nick's. Checked locally on `next start`: home form (user, owner/repo, pasted URLs, invalid names), wait state, profile, repo, NPC and not-found reports, deep-path and uppercase redirects, card PNGs in every layout.
+All 8 steps done. Live at deeplarp.nicktrim.com since 2026-10-15: Vercel project `deeplarp` (root `web`, deploys on push to main), unproxied Cloudflare CNAME, `GITHUB_TOKEN` set. Firewall: one rate-limit rule (Hobby allows one), report paths and `/api/card` share 100 requests per IP per 10 minutes. 40 was tried first and blocked a single person in one test. Checked live: first scan 13s, cached visit 0.4s. Checked locally on `next start`: home form (user, owner/repo, pasted URLs, invalid names), wait state, profile, repo, NPC and not-found reports, deep-path and uppercase redirects, card PNGs in every layout.
 
 - One catch-all route, `app/[...path]`, serves `/<user>` and `/<owner>/<repo>`. Anything deeper (`/tree/main`) and uppercase redirect to the lowercase canonical path.
 - Cache is `"use cache: remote"` instead of plain `"use cache"`: plain is in-memory per serverless instance, and the PAT's hourly budget needs one shared entry per target. Ok reports last 24h, not-found 1h, the busy state 1 minute.
