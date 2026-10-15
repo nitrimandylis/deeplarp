@@ -11,6 +11,12 @@ const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
 // Bump when RepoData or ProfileData changes shape, so old cache files get refetched.
 const CACHE_VERSION = 4;
+// The web server turns this off: Vercel's filesystem is read-only and Next.js caches instead.
+let diskCache = true;
+
+export function disableDiskCache(): void {
+  diskCache = false;
+}
 // Files read for dependency names, at the root or up to 2 folders down
 // (full-stack repos keep them in backend/ and frontend/). Shallowest first, max 4.
 const MANIFESTS = ["package.json", "requirements.txt", "pyproject.toml"];
@@ -60,20 +66,22 @@ export type RepoData = {
 
 let cachedToken: string | null = null;
 
+// GITHUB_TOKEN wins when set, so the web server (and local `next dev`) never falls
+// back to a gh token that can see private repos.
 export function getToken(): string {
   if (cachedToken) return cachedToken;
+
+  const fromEnv = process.env.GITHUB_TOKEN;
+  if (fromEnv) {
+    cachedToken = fromEnv;
+    return fromEnv;
+  }
 
   const result = spawnSync("gh", ["auth", "token"], { encoding: "utf8" });
   const fromGh = (result.stdout ?? "").trim();
   if (result.status === 0 && fromGh) {
     cachedToken = fromGh;
     return fromGh;
-  }
-
-  const fromEnv = process.env.GITHUB_TOKEN;
-  if (fromEnv) {
-    cachedToken = fromEnv;
-    return fromEnv;
   }
 
   throw new Error("No GitHub token. Run `gh auth login` or set GITHUB_TOKEN.");
@@ -125,6 +133,7 @@ export function isFresh(fetchedAt: string, now: Date = new Date()): boolean {
 }
 
 function readCache<T extends { version: number; fetchedAt: string }>(key: string): T | null {
+  if (!diskCache) return null;
   const file = cachePath(key);
   if (!existsSync(file)) return null;
   const data: T = JSON.parse(readFileSync(file, "utf8"));
@@ -133,6 +142,7 @@ function readCache<T extends { version: number; fetchedAt: string }>(key: string
 }
 
 function writeCache(key: string, data: unknown): void {
+  if (!diskCache) return;
   mkdirSync(CACHE_DIR, { recursive: true });
   writeFileSync(cachePath(key), JSON.stringify(data, null, 2));
 }

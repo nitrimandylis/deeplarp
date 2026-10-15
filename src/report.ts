@@ -1,7 +1,7 @@
 // scan(target) -> Report. The only place that fetches, scans and scores in one go.
 // Never prints: the CLI and the card both render from the Report.
 
-import { fetchRepo, fetchProfile, fetchMyLogin, apiCalls, type RepoData, type ProfileData } from "./gh";
+import { fetchRepo, fetchProfile, fetchMyLogin, disableDiskCache, apiCalls, type RepoData, type ProfileData } from "./gh";
 import { scanRepo, isTutorialPattern, forkPadding, backdatedCommits, mergedPrs, regexClaims, PITCH_CHARS, type Signal } from "./scan";
 import { scoreSignals, quipFor, fixesFor, type Score, type Fix } from "./score";
 import { narrate, DEFAULT_MODEL } from "./llm";
@@ -20,7 +20,9 @@ export type Report = Score & {
 };
 
 // repos: how many top-by-stars repos to scan on a profile. Infinity scans every one.
-export type ScanOptions = { fresh?: boolean; llm?: boolean; model?: string; repos?: number };
+// server: the web scanner. No disk cache, no LLM, no self mode (the token isn't the
+// visitor's), and the fix list is always filled in for the "Is this you?" section.
+export type ScanOptions = { fresh?: boolean; llm?: boolean; model?: string; repos?: number; server?: boolean };
 
 export const TOP_BY_STARS = 20;
 // GitHub's secondary rate limit trips on bursts, so repos are fetched a few at a time.
@@ -98,7 +100,10 @@ function dedupeClaims(claims: string[]): string[] {
 
 export async function scan(target: string | null, options: ScanOptions = {}): Promise<Report> {
   const fresh = options.fresh ?? false;
-  const myLogin = await fetchMyLogin();
+  const server = options.server ?? false;
+  if (server) disableDiskCache();
+  if (server && !target) throw new Error("The web scanner needs a target.");
+  const myLogin = server ? "" : await fetchMyLogin();
   const resolved = target ?? myLogin;
 
   let kind: "repo" | "profile";
@@ -138,14 +143,14 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
   }
 
   const score = scoreSignals(signals, npc !== null);
-  const self = owner.toLowerCase() === myLogin.toLowerCase();
+  const self = !server && owner.toLowerCase() === myLogin.toLowerCase();
   let quip = quipFor(score);
   // Same window signal 3 scores on. Further down a README is docs, or quotes someone
   // else's claim (the kernel README addresses "AI-powered coding assistants").
   let claims = dedupeClaims(claimSources.flatMap((text) => regexClaims(text.slice(0, PITCH_CHARS))));
   let model: string | null = null;
 
-  if (options.llm !== false) {
+  if (options.llm !== false && !server) {
     const story = narrate({ target: resolved, claimSources, score, quip }, options.model);
     if (story) {
       claims = story.claims;
@@ -160,7 +165,7 @@ export async function scan(target: string | null, options: ScanOptions = {}): Pr
     kind,
     self,
     quip,
-    fixes: self ? fixesFor(score, kind) : [],
+    fixes: self || server ? fixesFor(score, kind) : [],
     claims,
     reposScanned: repos.map((r) => r.fullName),
     npcReason: npc,
