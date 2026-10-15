@@ -81,7 +81,7 @@ export function paletteFromToml(path: string): Palette {
 }
 
 // Short names for the signal table in PRODUCT.md, used in the reason line.
-const SIGNAL_NAMES: Record<string, string> = {
+export const SIGNAL_NAMES: Record<string, string> = {
   "1": "readme padding",
   "2": "llm wrapper",
   "3": "empty claims",

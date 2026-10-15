@@ -137,6 +137,8 @@ Steps 1-7 done, step 8 (Vercel setup) is Nick's. Checked locally on `next start`
 - `scan(target, { server: true })` turns off the disk cache, the LLM and self mode, and always fills the fix list.
 - The hourly-limit message now says "try again in N min" (CLI too), so the server's timezone doesn't leak into it.
 - Home redesigned in Claude Design (option 1b, 2026-10-15): two columns, headline and input on the left, the nine archetypes as a scored list on the right, and the author's wide card under it. The six group archetypes are marked "20+" with a yellow-and-red stripe, because the colour comes from the score, not the archetype.
+- Report page restyled to match (2026-10-15): score and roast left with the share card beside them, receipts as a ledger panel, claims and the fix list on the right. On a phone the share card moves to the end.
+- `/about` explains the signals, points and rules. The points are read from `WEIGHTS` in `score.ts`, so the page can't drift. `about` is reserved in the target parser (GitHub reserves that name too, so no user loses their report). Also added: a pixel `$` favicon and a site OG image for the home and about pages.
 - Not-found pages return HTTP 200 because the report streams after the status is sent. They still render the not-found page with `noindex`.
 
 ## Landscape

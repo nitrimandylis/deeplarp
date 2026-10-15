@@ -28,9 +28,12 @@ export async function generateMetadata({ params }: PageProps<"/[...path]">): Pro
 
 export default function Page({ params }: PageProps<"/[...path]">) {
   return (
-    <Suspense fallback={<Scanning />}>
-      <Target params={params} />
-    </Suspense>
+    // data-wide: the same two-column width as the home page (see the root layout).
+    <div data-wide>
+      <Suspense fallback={<Scanning />}>
+        <Target params={params} />
+      </Suspense>
+    </div>
   );
 }
 
