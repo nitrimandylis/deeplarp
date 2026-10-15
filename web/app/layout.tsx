@@ -19,7 +19,7 @@ const pressStart = localFont({
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "deeplarp: is this GitHub larping?",
+  title: "deeplarp: zero larp tolerance",
   description: "Checks what a GitHub profile or repo claims against what the code shows. A 0-100 larp score, an archetype and the receipts.",
 };
 

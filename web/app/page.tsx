@@ -27,7 +27,7 @@ export default function Home() {
             <span className="text-score">$</span> claims against code, for GitHub
           </p>
           <h1 className="text-5xl leading-none font-bold tracking-[-0.025em] text-pretty sm:text-[64px]">
-            Is this GitHub larping?
+            Zero larp tolerance.
           </h1>
           <p className="text-[17px] leading-relaxed text-pretty text-muted">
             Type a user or a repo. About ten seconds later you get a score out of 100, which of the nine archetypes it
