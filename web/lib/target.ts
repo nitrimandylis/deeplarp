@@ -2,7 +2,7 @@
 // Accepts a pasted github.com URL too, and refuses reserved and opted-out names.
 
 // Top-level paths the site uses itself, so no user report can live there.
-export const RESERVED = ["api"];
+export const RESERVED = ["api", "about"];
 
 // People who asked (through a GitHub issue) not to be scannable. Lowercase.
 export const OPTED_OUT: string[] = [];

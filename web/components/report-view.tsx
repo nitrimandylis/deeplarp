@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Report } from "../../src/report";
 import { accentFor, reasonFor, tierCounts } from "../../src/card";
 import { CardPicker } from "@/components/card-picker";
@@ -47,7 +48,12 @@ export function ReportView({ report, scannedAt, canRescan }: { report: Report; s
         </p>
         <div className="pb-1">
           <p className="text-2xl font-bold tracking-wide">{report.archetype}</p>
-          <p className="mt-1 text-muted">{reasonFor(report)}</p>
+          <p className="mt-1 text-muted">
+            {reasonFor(report)}{" "}
+            <Link href="/about" className="text-dim underline decoration-rule underline-offset-4 hover:text-muted">
+              how it&apos;s scored
+            </Link>
+          </p>
         </div>
       </section>
 

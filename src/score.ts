@@ -3,7 +3,7 @@
 import type { Group, Signal } from "./scan";
 
 // Points per signal, by id and tier. Credits are negative.
-const WEIGHTS: Record<string, number> = {
+export const WEIGHTS: Record<string, number> = {
   "1:suspicious": 15,
   "2:contradicted": 35,
   "3:contradicted": 35,
@@ -22,7 +22,7 @@ const WEIGHTS: Record<string, number> = {
 // repeats confirm it's a pattern. Only the first 3 repeats count, so scanning 20 repos
 // doesn't score higher than scanning 4 for the same pattern.
 const REPEAT_SHARE = 0.5;
-const MAX_REPEATS = 3;
+export const MAX_REPEATS = 3;
 
 // Credits lower the score but can't launder a contradiction: tests in one repo don't
 // undo a painted graph or an empty "production-ready" claim in another. So credits only

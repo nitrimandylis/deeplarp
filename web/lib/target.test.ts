@@ -13,6 +13,7 @@ test("parseTarget", () => {
   expect(parseTarget("a--b")).toHaveProperty("error");
   expect(parseTarget("api")).toHaveProperty("error");
   expect(parseTarget("API/foo")).toHaveProperty("error");
+  expect(parseTarget("about")).toHaveProperty("error");
   expect(parseTarget("torvalds/li nux")).toHaveProperty("error");
 
   OPTED_OUT.push("someone");

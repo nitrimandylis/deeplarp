@@ -244,10 +244,10 @@ export function cardLayout(report: Report, options: CardOptions = DEFAULT_CARD):
     );
   const tiles = el(
     { gap: px(14) },
-    tile(String(report.reposScanned.length), "repos scanned", COLORS.text),
+    tile(String(report.reposScanned.length), report.reposScanned.length === 1 ? "repo scanned" : "repos scanned", COLORS.text),
     tile(String(counts.contradicted), "contradicted", counts.contradicted > 0 ? accent : COLORS.text),
     tile(String(counts.suspicious), "suspicious", COLORS.text),
-    tile(String(counts.credit), "credits", counts.credit > 0 ? COLORS.credit : COLORS.text),
+    tile(String(counts.credit), counts.credit === 1 ? "credit" : "credits", counts.credit > 0 ? COLORS.credit : COLORS.text),
   );
 
   // Bars on the taller cards: points per group, out of 100. When no group has points

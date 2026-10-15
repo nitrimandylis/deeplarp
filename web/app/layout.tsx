@@ -21,6 +21,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: "deeplarp: zero larp tolerance",
   description: "Checks what a GitHub profile or repo claims against what the code shows. A 0-100 larp score, an archetype and the receipts.",
+  twitter: { card: "summary_large_image" },
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
@@ -44,6 +45,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
 
         <footer className="mx-auto flex w-full max-w-3xl flex-wrap group-has-data-wide/body:max-w-6xl gap-x-6 gap-y-2 px-5 pb-8 text-xs text-dim sm:px-8">
           <span>Receipts from public GitHub data, not a verdict on intent.</span>
+          <Link href="/about" className="underline-offset-4 hover:text-muted hover:underline">How it&apos;s scored</Link>
           <a href={REPO_URL} className="underline-offset-4 hover:text-muted hover:underline">Source</a>
           <a href={OPT_OUT_URL} className="underline-offset-4 hover:text-muted hover:underline">Opt out</a>
         </footer>
