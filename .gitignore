@@ -9,3 +9,7 @@ fixtures.local.json
 
 # ...except the example card shown in the README.
 !docs/*.png
+
+# ...and the web app's own images.
+!web/public/*.png
+!web/public/*.svg

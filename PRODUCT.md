@@ -126,6 +126,18 @@ Stack: Bun, latest Next.js (App Router), Tailwind, shadcn. `outputFileTracingRoo
 7. `frontend-design` pass
 8. Vercel project (root `web`), PAT, Firewall rule, domain
 
+### Web status (2026-10-15)
+
+Steps 1-7 done, step 8 (Vercel setup) is Nick's. Checked locally on `next start`: home form (user, owner/repo, pasted URLs, invalid names), wait state, profile, repo, NPC and not-found reports, deep-path and uppercase redirects, card PNGs in every layout.
+
+- One catch-all route, `app/[...path]`, serves `/<user>` and `/<owner>/<repo>`. Anything deeper (`/tree/main`) and uppercase redirect to the lowercase canonical path.
+- Cache is `"use cache: remote"` instead of plain `"use cache"`: plain is in-memory per serverless instance, and the PAT's hourly budget needs one shared entry per target. Ok reports last 24h, not-found 1h, the busy state 1 minute.
+- The cached loader returns not-found and busy as values instead of throwing them. In production Next replaces the message of an error thrown out of a cached function, so it couldn't be told apart from a real failure.
+- `/api/card` renders `cardLayout()` with `next/og`. It's the OG image of every report and the download links, and the CDN caches it for a day.
+- `scan(target, { server: true })` turns off the disk cache, the LLM and self mode, and always fills the fix list.
+- The hourly-limit message now says "try again in N min" (CLI too), so the server's timezone doesn't leak into it.
+- Not-found pages return HTTP 200 because the report streams after the status is sent. They still render the not-found page with `noindex`.
+
 ## Landscape
 
 - `akritagrawal-stack/LARPDetector`: macOS Electron dossier for LinkedIn profiles. Investigative tone, checks only that GitHub work exists.

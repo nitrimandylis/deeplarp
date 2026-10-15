@@ -98,9 +98,11 @@ export function rateLimitMessage(status: number, headers: Headers): string | nul
   const retryAfter = headers.get("retry-after");
   if (retryAfter) return `GitHub says too many requests too fast. Wait ${retryAfter} seconds and try again.`;
   if (headers.get("x-ratelimit-remaining") === "0") {
-    const reset = headers.get("x-ratelimit-reset");
-    const when = reset ? new Date(Number(reset) * 1000).toLocaleTimeString() : "later";
-    return `GitHub's hourly limit is used up. Try again after ${when}.`;
+    // Minutes rather than a clock time, which would be in the server's timezone on the web.
+    const reset = Number(headers.get("x-ratelimit-reset"));
+    if (!reset) return "GitHub's hourly limit is used up. Try again later.";
+    const minutes = Math.max(1, Math.ceil((reset * 1000 - Date.now()) / 60_000));
+    return `GitHub's hourly limit is used up. Try again in ${minutes} min.`;
   }
   return status === 429 ? "GitHub says too many requests. Wait a minute and try again." : null;
 }

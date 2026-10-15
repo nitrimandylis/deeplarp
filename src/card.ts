@@ -94,6 +94,10 @@ const SIGNAL_NAMES: Record<string, string> = {
   P2: "merged PRs",
 };
 
+export function cardSize(layout: Layout): { width: number; height: number } {
+  return { width: CANVASES[layout].width, height: CANVASES[layout].height };
+}
+
 export type CardOptions = { layout: Layout; theme: string; handle?: string; palette?: Palette };
 export const DEFAULT_CARD: CardOptions = { layout: "wide", theme: "auto" };
 
