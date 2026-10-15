@@ -13,3 +13,5 @@ fixtures.local.json
 # ...and the web app's own images.
 !web/public/*.png
 !web/public/*.svg
+.vercel
+.env*
