@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Input } from "@/components/ui/input";
 import { parseTarget } from "@/lib/target";
 
 // The home page input, set inside a shell prompt: typing the target is typing the command.
@@ -22,12 +21,16 @@ export function ScanForm() {
     router.push("/" + parsed.target.toLowerCase());
   }
 
+  // The border goes green while typing and red on an error.
+  const border = error ? "border-bad" : "border-rule focus-within:border-score";
+
   return (
-    <form onSubmit={submit} className="rounded-lg border border-rule bg-panel p-4 sm:p-5">
-      <label htmlFor="target" className="flex items-center gap-3 text-lg sm:text-xl">
+    <form onSubmit={submit} className={`rounded-lg border bg-panel px-5 py-5 transition-colors sm:px-6 ${border}`}>
+      {/* On a phone the input wraps under "npx deeplarp", like a long terminal line. */}
+      <label htmlFor="target" className="flex flex-wrap items-center gap-x-3 gap-y-2 text-lg sm:text-[22px]">
         <span className="shrink-0 text-score">$</span>
-        <span className="shrink-0 text-muted">npx deeplarp</span>
-        <Input
+        <span className="shrink-0">npx deeplarp</span>
+        <input
           id="target"
           name="target"
           autoFocus
@@ -37,10 +40,11 @@ export function ScanForm() {
           placeholder="username or owner/repo"
           aria-invalid={error !== "" || undefined}
           aria-describedby="target-help"
-          className="h-auto border-0 bg-transparent px-0 py-0 text-lg text-paper caret-score placeholder:text-dim focus-visible:ring-0 sm:text-xl dark:bg-transparent"
+          onChange={() => setError("")}
+          className="min-w-[18ch] flex-1 bg-transparent text-paper caret-score outline-none placeholder:text-dim"
         />
       </label>
-      <p id="target-help" className={`mt-3 text-sm ${error ? "text-bad" : "text-dim"}`} role={error ? "alert" : undefined}>
+      <p id="target-help" className={`mt-3 text-[13px] ${error ? "text-bad" : "text-dim"}`} role={error ? "alert" : undefined}>
         {error || "Press Enter to scan. A pasted github.com link works too."}
       </p>
     </form>

@@ -26,7 +26,9 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${jetbrains.variable} ${pressStart.variable} antialiased`}>
-      <body className="flex min-h-dvh flex-col">
+      {/* group/body: the home page marks itself data-wide, and main and the footer
+          widen to match it. Report pages keep the narrow reading column. */}
+      <body className="group/body flex min-h-dvh flex-col">
         <header className="flex h-11 items-center border-b border-rule bg-panel px-4 text-sm">
           <div className="flex gap-2" aria-hidden>
             <span className="size-3 rounded-full bg-track" />
@@ -38,9 +40,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           </Link>
         </header>
 
-        <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-10 sm:px-8 sm:py-14">{children}</main>
+        <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-10 group-has-data-wide/body:max-w-6xl sm:px-8 sm:py-14">{children}</main>
 
-        <footer className="mx-auto flex w-full max-w-3xl flex-wrap gap-x-6 gap-y-2 px-5 pb-8 text-xs text-dim sm:px-8">
+        <footer className="mx-auto flex w-full max-w-3xl flex-wrap group-has-data-wide/body:max-w-6xl gap-x-6 gap-y-2 px-5 pb-8 text-xs text-dim sm:px-8">
           <span>Receipts from public GitHub data, not a verdict on intent.</span>
           <a href={REPO_URL} className="underline-offset-4 hover:text-muted hover:underline">Source</a>
           <a href={OPT_OUT_URL} className="underline-offset-4 hover:text-muted hover:underline">Opt out</a>
