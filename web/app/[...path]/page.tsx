@@ -5,7 +5,7 @@ import { connection } from "next/server";
 import { parseTarget } from "@/lib/target";
 import { loadReport } from "@/lib/report";
 import { RESCAN_AFTER_MS } from "@/lib/site";
-import { ReportView, Busy } from "@/components/report-view";
+import { ReportView, Busy, Broken } from "@/components/report-view";
 import { Scanning } from "@/components/scanning";
 
 // /<user> and /<owner>/<repo>, so swapping github.com for this domain works. Anything
@@ -59,6 +59,7 @@ async function Report({ target }: { target: string }) {
   const outcome = await loadReport(target);
   if (outcome.kind === "missing") notFound();
   if (outcome.kind === "busy") return <Busy message={outcome.message} />;
+  if (outcome.kind === "broken") return <Broken />;
 
   const { report, scannedAt } = outcome.scanned;
   // The report's age is a request-time fact, not part of the cached page.

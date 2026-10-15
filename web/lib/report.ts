@@ -9,7 +9,8 @@ export type Scanned = { report: Report; scannedAt: string };
 export type Outcome =
   | { kind: "ok"; scanned: Scanned }
   | { kind: "missing" } // no such user or repo, or an organization
-  | { kind: "busy"; message: string }; // GitHub's rate limit
+  | { kind: "busy"; message: string } // GitHub's rate limit
+  | { kind: "broken" }; // the server's token is missing or rejected
 
 export function reportTag(target: string): string {
   return "report:" + target;
@@ -37,6 +38,13 @@ export async function loadReport(target: string): Promise<Outcome> {
       // Kept for a minute only, so the next visit after the reset scans for real.
       cacheLife({ stale: 30, revalidate: 60, expire: 120 });
       return { kind: "busy", message };
+    }
+    if (message.startsWith("No GitHub token") || message.includes(" 401")) {
+      // A config problem on the server, not the visitor's. Logged so it shows up in
+      // the Vercel logs, and kept for a minute so a fixed token takes effect fast.
+      console.error("GITHUB_TOKEN missing or rejected:", message);
+      cacheLife({ stale: 30, revalidate: 60, expire: 120 });
+      return { kind: "broken" };
     }
     throw error;
   }

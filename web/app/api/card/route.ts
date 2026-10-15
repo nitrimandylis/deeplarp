@@ -38,6 +38,7 @@ export async function GET(request: NextRequest) {
   const outcome = await loadReport(parsed.target.toLowerCase());
   if (outcome.kind === "missing") return new Response("No GitHub user or repo by that name.", { status: 404 });
   if (outcome.kind === "busy") return new Response(outcome.message, { status: 503 });
+  if (outcome.kind === "broken") return new Response("Scanning is down: the site's GitHub token was refused.", { status: 503 });
 
   const { width, height } = cardSize(layout);
   const image = new ImageResponse(

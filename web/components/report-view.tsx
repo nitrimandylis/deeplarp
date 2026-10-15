@@ -134,3 +134,17 @@ export function Busy({ message }: { message: string }) {
     </div>
   );
 }
+
+export function Broken() {
+  return (
+    <div>
+      <p className="text-lg">
+        <span className="text-bad">!</span> Scanning is down.
+      </p>
+      <p className="mt-4 max-w-[60ch] text-muted">
+        GitHub is refusing the site&apos;s access token, so new scans can&apos;t run. Nothing you typed caused this.
+        Reports scanned in the last day still load.
+      </p>
+    </div>
+  );
+}
