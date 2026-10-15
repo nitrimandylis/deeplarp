@@ -43,7 +43,7 @@ export default async function OpengraphImage() {
           </div>
           <div style={{ fontSize: 96, fontWeight: 700, letterSpacing: "-0.03em", lineHeight: 1 }}>Zero larp tolerance.</div>
           <div style={{ fontSize: 28, color: "#8a8f98", lineHeight: 1.4 }}>
-            A GitHub profile's claims, checked against its code.
+            A GitHub profile&apos;s claims, checked against its code.
           </div>
         </div>
 
