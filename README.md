@@ -49,7 +49,9 @@ nick@deeplarp:~$ npx deeplarp torvalds
 | 06 | **big bang** | 3000+ lines of code in 3 or fewer commits (suspicious) |
 | 07 | **fork padding** | forks with zero commits of their own making up half the profile (suspicious) |
 | 08 | **backdated commits** | scripted commit runs dated before the repo existed (contradicted) |
-| P1 | **tests and ci** | real test files and workflows, not template ones (credit) |
+| 09 | **hosted elsewhere** | a product pitch linking a Streamlit/HF Space/etc. app, with no engine in the repo (suspicious) |
+| 10 | **star farming** | a README that trades access for a star, "star to unlock" (suspicious) |
+| P1 | **maintained tests** | test files changed in 3+ commits over 2+ weeks, not a suite dropped in at once (credit) |
 | P2 | **merged prs** | PRs merged into repos you don't own (credit) |
 
 Suspicion alone caps at 74. The top band needs at least one contradicted signal. Credit offsets suspicious points only, up to -20, so tests in one repo can't cancel a painted graph in another.

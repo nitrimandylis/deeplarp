@@ -18,10 +18,12 @@ const SIGNALS = [
   { id: "1", tier: "suspicious", name: "README padding", what: "A README far longer than the code it describes." },
   { id: "6", tier: "suspicious", name: "Big-bang commits", what: "3000+ lines of code arriving in 3 or fewer commits." },
   { id: "7", tier: "suspicious", name: "Fork padding", what: "Most of the profile is forks with no commits of the owner's own." },
+  { id: "9", tier: "suspicious", name: "Hosted elsewhere", what: "Pitches a product and links an app on a host like Streamlit or Hugging Face Spaces, but the repo has under 50 lines of code. The claims can't be checked because the engine isn't here. A docs/ or website/ site doesn't count as code." },
+  { id: "10", tier: "suspicious", name: "Star farming", what: "The README trades access for a star (\"star the repo to unlock\"). GitHub no longer lists other people's stargazers, so bought stars can't be checked directly." },
 ];
 
 const CREDITS = [
-  { id: "P1", name: "Tests and CI", what: "Real test files (not empty ones, not a template's) or CI workflows." },
+  { id: "P1", name: "Maintained tests", what: "Real test files (not empty ones, not a template's) that changed in 3+ commits over 2+ weeks. An LLM writes a suite in one go, so tests that merely exist prove little." },
   { id: "P2", name: "Merged PRs", what: "Pull requests merged into other people's repos." },
 ];
 

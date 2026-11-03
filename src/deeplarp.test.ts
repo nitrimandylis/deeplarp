@@ -31,6 +31,7 @@ function repo(overrides: Partial<RepoData> = {}): RepoData {
     languages: { TypeScript: 40_000 },
     commits: [],
     manifests: {},
+    testCommits: [],
     fetchedAt: "2026-10-05T00:00:00Z",
     ...overrides,
   };
@@ -143,11 +144,51 @@ test("one template file alone is not a fingerprint, the template README is", () 
   expect(ids(scanRepo(r))).toBe("4:suspicious");
 });
 
-test("P1 needs 2 real test files; template tests and CI alone don't count", () => {
-  const r = repo({ files: [{ path: "src/a.test.ts", size: 10 }, { path: "tests/b.py", size: 10 }, { path: ".github/workflows/ci.yml", size: 10 }] });
-  expect(scanRepo(r)[0]!.receipt).toBe("2 test files and CI workflows");
-  expect(scanRepo(repo({ files: [{ path: "src/App.test.js", size: 10 }, { path: "src/setupTests.js", size: 10 }] }))).toEqual([]);
+// Three test-touching commits spread over three weeks: tests kept alongside the code.
+const grownTests = [
+  { sha: "a", date: "2026-01-01T00:00:00Z" },
+  { sha: "b", date: "2026-01-10T00:00:00Z" },
+  { sha: "c", date: "2026-01-22T00:00:00Z" },
+];
+
+test("P1 needs 2 real test files that changed over weeks; template tests and CI alone don't count", () => {
+  const files = [{ path: "src/a.test.ts", size: 10 }, { path: "tests/b.py", size: 10 }, { path: ".github/workflows/ci.yml", size: 10 }];
+  expect(scanRepo(repo({ files, testCommits: grownTests }))[0]!.receipt).toBe("2 test files, changed in 3 commits over 3 weeks, plus CI");
+  // A suite dropped in at once (LLM-written or not) earns nothing.
+  expect(scanRepo(repo({ files, testCommits: grownTests.slice(0, 2) }))).toEqual([]);
+  const sameWeek = grownTests.map((c, i) => ({ ...c, date: `2026-01-0${i + 1}T00:00:00Z` }));
+  expect(scanRepo(repo({ files, testCommits: sameWeek }))).toEqual([]);
+  expect(scanRepo(repo({ files: [{ path: "src/App.test.js", size: 10 }, { path: "src/setupTests.js", size: 10 }], testCommits: grownTests }))).toEqual([]);
   expect(scanRepo(repo({ files: [{ path: ".github/workflows/pages.yml", size: 10 }] }))).toEqual([]);
+});
+
+test("docs/ and website/ sites aren't product code", () => {
+  const files = [{ path: "docs/script.js", size: 40_000 }, { path: "website/src/page.tsx", size: 4000 }, { path: "src/x.ts", size: 400 }];
+  expect(logicLines(repo({ files }))).toBe(10);
+});
+
+test("signal 9: a product pitch, a hosted app link and no code", () => {
+  const readme = "An intelligent checker. Try it at https://thing.streamlit.app/ today.";
+  expect(ids(scanRepo(repo({ readme, files: [{ path: "docs/app.js", size: 40_000 }] })))).toBe("9:suspicious");
+  expect(scanRepo(repo({ readme, files: [{ path: "docs/app.js", size: 40_000 }] }))[0]!.receipt).toBe(
+    'says "intelligent", the app runs at thing.streamlit.app and the repo has no code',
+  );
+  // The code is here: a live demo link is normal.
+  expect(scanRepo(repo({ readme }))).toEqual([]);
+  // No product pitch: a portfolio linking its own deploy.
+  expect(scanRepo(repo({ readme: "My site, live at me.netlify.app", files: [] }))).toEqual([]);
+  // Hype in the pitch: signal 3 fires and names the host instead of charging twice.
+  const s = scanRepo(repo({ description: "World's first humanizer", readme, files: [] }));
+  expect(ids(s)).toBe("3:contradicted");
+  expect(s[0]!.receipt).toContain("the app runs at thing.streamlit.app");
+});
+
+test("signal 10: a README that trades access for a star", () => {
+  expect(ids(scanRepo(repo({ readme: "Please star the repo to unlock the download link." })))).toBe("10:suspicious");
+  expect(ids(scanRepo(repo({ readme: "Access is star-gated for now." })))).toBe("10:suspicious");
+  expect(scanRepo(repo({ readme: "If this helped, please consider starring the repo." }))).toEqual([]);
+  expect(scanRepo(repo({ readme: "Start a web server on port 8001, visit localhost to access it." }))).toEqual([]);
+  expect(scanRepo(repo({ readme: "Use the start script to download the weights." }))).toEqual([]);
 });
 
 test("signal 3: a big claim with no code is contradicted", () => {

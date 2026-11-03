@@ -25,16 +25,18 @@ Decided in a grill session on 2026-10-05.
 | 6 | Big-bang: 3000+ lines of code in 3 or fewer commits (added 2026-10-05; at 1500 it mostly caught students uploading finished class projects) | Tutorial | suspicious |
 | 7 | Fork padding: forks with zero own commits | Farmer | suspicious |
 | 8 | Backdated commits: scripted-looking runs (one repeated message or one clock time) dated before their repo existed, or with author dates 30+ days before the commit | Farmer | contradicted if before the repo existed, else suspicious |
-| P1 | Tests and CI exist | credit | subtracts |
+| 9 | Hosted elsewhere: a product pitch (hype or big-claim words) plus a link to a hosted app (streamlit.app, hf.space, Spaces, vercel.app...) over under 50 lines of code. Folds into 3's receipt when 3 also fires (added 2026-11-03 after Turnitout-Humanizer: an 11k-star repo that is a landing page for closed Streamlit apps) | Wrapper | suspicious |
+| 10 | Star farming: README trades access for a star ("star to unlock", "star-gated"). Added 2026-11-03. A hollow-stargazer sample was planned but GitHub no longer lists other people's stargazers (REST 404, GraphQL empty) | Farmer | suspicious |
+| P1 | Maintained tests: 2+ real test files, changed in 3+ distinct commits spanning 14+ days (sampled: history of up to 8 test files). Changed 2026-11-03: LLMs write whole suites in one go, so files existing proved nothing | credit | subtracts |
 | P2 | Merged PRs to other people's repos | credit | subtracts |
 
 A signal that fires on more than one repo adds half its weight per extra repo (3 empty-claim repos: 35 + 18 + 18 = 71). Repos that label themselves a learning exercise ("practice project", "course project", "bootcamp", "followed a tutorial", or practice/assignment/tutorial in the name) skip signals 1, 6 and suspicious 4. A "from scratch" claim over template files still counts.
 
 Credits only offset suspicious Wrapper and Tutorial points, and at most -20 in total. Contradicted signals and Farmer signals always count in full: tests in one repo don't undo a painted graph or an empty claim in another (changed 2026-10-06; before, -20 of credit could hide a 35-point contradiction).
 
-Lines of code are file bytes / 40, notebooks (`.ipynb`) at bytes / 400 because most of their bytes are outputs. `.sol`, `.r`, `.sh` count as code. HTML doesn't: an "AI-powered" repo that is one `index.html` has no code.
+Lines of code are file bytes / 40, notebooks (`.ipynb`) at bytes / 400 because most of their bytes are outputs. `.sol`, `.r`, `.sh` count as code. HTML doesn't: an "AI-powered" repo that is one `index.html` has no code. Nor does anything under `docs/`, `website/` or `site/` (2026-11-03): that JS runs a docs or landing page, not the product.
 
-Cut on purpose: star quality (bought stars aren't the owner's larp), experience claims (too many false positives), liveness (an abandoned side project isn't larp).
+Cut on purpose: experience claims (too many false positives), liveness (an abandoned side project isn't larp).
 
 ## Archetypes
 

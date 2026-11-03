@@ -14,6 +14,8 @@ export const WEIGHTS: Record<string, number> = {
   "7:suspicious": 15,
   "8:suspicious": 20,
   "8:contradicted": 40,
+  "9:suspicious": 20,
+  "10:suspicious": 20,
   "P1:credit": -10,
   "P2:credit": -15,
 };
@@ -211,6 +213,14 @@ const QUIPS: QuipRule[] = [
         : "Author dates a month older than the commits. Bold use of --date.",
   },
   {
+    when: (s) => find(s, "9") !== undefined,
+    line: (s) => `The product lives at ${find(s, "9")!.detail}. The repo is the brochure.`,
+  },
+  {
+    when: (s) => find(s, "10") !== undefined,
+    line: (s) => `${find(s, "10")!.detail} stars, each one an entry fee.`,
+  },
+  {
     when: (s) => find(s, "7") !== undefined,
     line: (s) => `${find(s, "7")!.detail} forks, zero commits to any of them. A collector.`,
   },
@@ -247,6 +257,8 @@ const FIXES: Record<string, string> = {
   "6": "Commit as you build. One giant commit hides how the code got written",
   "7": "Archive or delete forks you never committed to",
   "8": "Stop rewriting author dates. Real dates on fewer commits beat a painted graph",
+  "9": "Put the engine in the repo, or call it a landing page for a closed app",
+  "10": "Drop the star gate. Stars people chose to give are the only ones that count",
 };
 
 export function fixesFor(score: Score, kind: "repo" | "profile"): Fix[] {
@@ -261,7 +273,7 @@ export function fixesFor(score: Score, kind: "repo" | "profile"): Fix[] {
   let room = creditRoom(score.signals);
   if (!score.signals.some((s) => s.id === "P1") && room < 0) {
     const saved = Math.min(-WEIGHTS["P1:credit"]!, -room);
-    fixes.push({ text: "Add tests to a repo (2+ test files)", points: saved });
+    fixes.push({ text: "Keep tests growing with the code (test files changed in 3+ commits over 2+ weeks)", points: saved });
     room += saved;
   }
   if (kind === "profile" && !score.signals.some((s) => s.id === "P2") && room < 0) {

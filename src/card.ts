@@ -90,7 +90,9 @@ export const SIGNAL_NAMES: Record<string, string> = {
   "6": "big-bang commits",
   "7": "fork padding",
   "8": "backdated commits",
-  P1: "tests + CI",
+  "9": "hosted elsewhere",
+  "10": "star farming",
+  P1: "maintained tests",
   P2: "merged PRs",
 };
 

@@ -6,7 +6,7 @@ import type { RepoData, ProfileData, Commit } from "./gh";
 export type Group = "Wrapper" | "Tutorial" | "Farmer";
 
 export type Signal = {
-  id: string; // matches the signal table in PRODUCT.md: "1"-"8", "P1", "P2"
+  id: string; // matches the signal table in PRODUCT.md: "1"-"10", "P1", "P2"
   group: Group | "credit";
   tier: "suspicious" | "contradicted" | "credit";
   where: string; // repo full name, or the login for profile signals
@@ -22,6 +22,15 @@ const CODE_EXTENSIONS = [
   ".hs", ".ml", ".dart", ".lua", ".jl", ".vue", ".svelte", ".sol", ".r", ".R", ".sh",
 ];
 const IGNORED_DIRS = ["node_modules/", "vendor/", "dist/", "build/", ".next/", "third_party/"];
+// Documentation and marketing sites. Their JS runs a landing page, not the product, so a
+// repo that is a README plus a docs/ site has no code of its own.
+// ponytail: a project whose real app is served from docs/ (a Pages game, say) reads as no
+// code too. Check for a package.json outside these folders if that shows up in calibration.
+const SITE_DIRS = ["docs/", "website/", "site/"];
+
+function inSiteDir(path: string): boolean {
+  return SITE_DIRS.some((dir) => path.startsWith(dir) || path.includes("/" + dir));
+}
 
 // ponytail: bytes / 40 guesses the line count from tree sizes alone (no file contents).
 // Swap for real line counts if calibration shows this misjudges minified or generated code.
@@ -37,6 +46,7 @@ export function logicLines(repo: RepoData): number {
   let notebookBytes = 0;
   for (const file of repo.files) {
     if (IGNORED_DIRS.some((dir) => file.path.includes(dir))) continue;
+    if (inSiteDir(file.path)) continue;
     if (file.path.includes(".min.")) continue;
     if (file.path.endsWith(".ipynb")) notebookBytes += file.size;
     else if (CODE_EXTENSIONS.some((ext) => file.path.endsWith(ext))) bytes += file.size;
@@ -324,24 +334,92 @@ export function bigBang(repo: RepoData): Signal | null {
   };
 }
 
-// --- P1: tests and CI ---
+// --- P1: tests that grew with the code ---
 
 const TEST_FILE = /(\.test\.|\.spec\.|_test\.go$|(^|\/)test_[^/]+\.py$|(^|\/)(tests?|__tests__|spec)\/)/;
 // Tests that scaffolding tools write for you (CRA, Angular CLI). They aren't evidence.
 const TEMPLATE_TEST = /(^|\/)(App\.test\.[jt]sx?|setupTests\.[jt]s|app\.component\.spec\.ts)$/;
 const MIN_TEST_FILES = 2;
+// An LLM writes a test suite in one go, so test files existing proves little. Tests that
+// kept changing across separate commits and weeks were maintained alongside the code.
+export const MIN_TEST_COMMITS = 3;
+export const MIN_TEST_SPAN_DAYS = 14;
 
-// Credit needs real test files. CI alone is often just a Pages deploy, so it only
-// shows up in the receipt next to tests.
+export function testFiles(files: { path: string; size: number }[]): string[] {
+  return files
+    .filter((f) => f.size > 0 && TEST_FILE.test(f.path) && !TEMPLATE_TEST.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)))
+    .map((f) => f.path);
+}
+
+// Credit needs real test files that were edited in several commits over a few weeks.
+// CI alone is often just a Pages deploy, so it only shows up in the receipt next to tests.
 export function testsAndCi(repo: RepoData): Signal | null {
-  const tests = repo.files.filter(
-    (f) => f.size > 0 && TEST_FILE.test(f.path) && !TEMPLATE_TEST.test(f.path) && !IGNORED_DIRS.some((d) => f.path.includes(d)),
-  );
+  const tests = testFiles(repo.files);
   if (tests.length < MIN_TEST_FILES) return null;
 
+  const commits = repo.testCommits.length;
+  if (commits < MIN_TEST_COMMITS) return null;
+  const dates = repo.testCommits.map((c) => new Date(c.date).getTime());
+  const days = (Math.max(...dates) - Math.min(...dates)) / 86_400_000;
+  if (days < MIN_TEST_SPAN_DAYS) return null;
+
+  const weeks = Math.round(days / 7);
   const ci = repo.files.some((f) => f.path.startsWith(".github/workflows/"));
-  const receipt = `${tests.length} test files` + (ci ? " and CI workflows" : "");
+  const receipt = `${tests.length} test files, changed in ${commits} commits over ${weeks} weeks` + (ci ? ", plus CI" : "");
   return { id: "P1", group: "credit", tier: "credit", where: repo.fullName, receipt };
+}
+
+// --- signal 9: hosted app, no engine in the repo ---
+
+// Hosts that run someone's app for them. A README pointing at one is normal, but a repo
+// with no code of its own that pitches a product and links one is a storefront: the
+// claims can't be checked against code because the code isn't here.
+const HOSTED_APP = /\b(?:https?:\/\/)?([a-z0-9-]+\.(?:streamlit\.app|hf\.space|gradio\.live|replit\.app|repl\.co|onrender\.com|herokuapp\.com|railway\.app|fly\.dev|vercel\.app|netlify\.app|pages\.dev|web\.app|firebaseapp\.com)|huggingface\.co\/spaces\/[\w.-]+\/[\w.-]+)/i;
+
+export function hostedApp(repo: RepoData): Signal | null {
+  const [owner, name] = repo.fullName.split("/");
+  if (owner!.toLowerCase() === name!.toLowerCase()) return null; // profile README repo
+  if (isDocsRepo(repo)) return null;
+
+  const link = claimText(repo).match(HOSTED_APP);
+  if (!link) return null;
+  // Only a product pitch counts: a personal site linking its own deploy isn't one.
+  const claim = claimText(repo).match(HYPE_CLAIM) ?? claimText(repo).match(BIG_CLAIM);
+  if (!claim) return null;
+
+  const lines = logicLines(repo);
+  if (lines >= EMPTY_MAX_LINES) return null;
+
+  return {
+    id: "9",
+    where: repo.fullName,
+    group: "Wrapper",
+    tier: "suspicious",
+    receipt: `says "${claim[0]}", the app runs at ${link[1]} and the repo has ${lines === 0 ? "no code" : `about ${lines} lines of code`}`,
+    detail: link[1],
+  };
+}
+
+// --- signal 10: star farming ---
+
+// Stars as an entry fee ("star the repo to unlock it") inflate the count on purpose.
+// ponytail: README text only. GitHub stopped listing other people's stargazers (404 on
+// REST, empty on GraphQL, checked 2026-11-03), so bought stars from hollow accounts
+// can't be sampled. Add that check back if the API reopens.
+// "star" must be the whole word: "start a server to access it" is not a gate.
+const STAR_GATE = /(?:\bstar(?:ring)?\b|⭐)[^.\n]{0,60}?\bto (?:unlock|access|get access|download|use (?:it|the|this))\b|\bstar[- ]gat(?:ed|ing)\b/i;
+
+export function starFarming(repo: RepoData): Signal | null {
+  const gate = repo.readme.match(STAR_GATE);
+  if (!gate) return null;
+  return {
+    id: "10",
+    where: repo.fullName,
+    group: "Farmer",
+    tier: "suspicious",
+    receipt: `README trades access for a star: "${gate[0].trim()}" (${repo.stars} stars)`,
+    detail: String(repo.stars),
+  };
 }
 
 // --- honesty exemption ---
@@ -376,8 +454,16 @@ function exemptWhenLearning(signal: Signal): boolean {
 // --- entry point ---
 
 export function scanRepo(repo: RepoData): Signal[] {
-  const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), bigBang(repo), testsAndCi(repo)];
-  const fired = results.filter((s): s is Signal => s !== null);
+  const results = [readmeVsLogic(repo), llmWrapper(repo), emptyClaim(repo), templateFingerprint(repo), stackMismatch(repo), bigBang(repo), hostedApp(repo), starFarming(repo), testsAndCi(repo)];
+  let fired = results.filter((s): s is Signal => s !== null);
+  // An empty claim (3) already covers a hosted storefront with hype in its pitch. Name the
+  // host in its receipt rather than charging the same missing code twice.
+  const empty = fired.find((s) => s.id === "3");
+  const hosted = fired.find((s) => s.id === "9");
+  if (empty && hosted) {
+    empty.receipt += `, the app runs at ${hosted.detail}`;
+    fired = fired.filter((s) => s !== hosted);
+  }
   if (!selfDeclaredLearning(repo)) return fired;
   return fired.filter((s) => !exemptWhenLearning(s));
 }

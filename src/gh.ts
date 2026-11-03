@@ -5,12 +5,13 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
+import { testFiles } from "./scan";
 
 const API = "https://api.github.com";
 const CACHE_DIR = join(homedir(), ".deeplarp", "cache");
 const CACHE_HOURS = 24;
 // Bump when RepoData or ProfileData changes shape, so old cache files get refetched.
-const CACHE_VERSION = 4;
+const CACHE_VERSION = 5;
 // The web server turns this off: Vercel's filesystem is read-only and Next.js caches instead.
 let diskCache = true;
 
@@ -61,6 +62,7 @@ export type RepoData = {
   languages: Record<string, number>; // language -> bytes
   commits: Commit[]; // newest first, up to 100
   manifests: Record<string, string>; // manifest path -> file text
+  testCommits: { sha: string; date: string }[]; // distinct commits that touched sampled test files
   fetchedAt: string;
 };
 
@@ -197,6 +199,8 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     if (res.ok) manifests[path] = await res.text();
   }
 
+  const testCommits = await fetchTestCommits(meta.full_name, testFiles(files));
+
   const data: RepoData = {
     version: CACHE_VERSION,
     fullName: meta.full_name,
@@ -212,10 +216,53 @@ export async function fetchRepo(fullName: string, fresh = false): Promise<RepoDa
     languages,
     commits,
     manifests,
+    testCommits,
     fetchedAt: new Date().toISOString(),
   };
   writeCache(fullName, data);
   return data;
+}
+
+// --- test history: one GraphQL call per repo with tests ---
+
+// Test files whose history gets read. Spread across the list so one folder can't fill it.
+const TEST_SAMPLE = 8;
+const TEST_HISTORY = 30; // commits per sampled file
+
+export function sampleEvenly(items: string[], n: number): string[] {
+  if (items.length <= n) return items;
+  const picked: string[] = [];
+  for (let i = 0; i < n; i++) picked.push(items[Math.floor((i * items.length) / n)]!);
+  return picked;
+}
+
+export function testHistoryQuery(fullName: string, testPaths: string[]): string {
+  const [owner, name] = fullName.split("/");
+  const histories = testPaths.map(
+    (path, i) => `t${i}: history(first: ${TEST_HISTORY}, path: ${JSON.stringify(path)}) { nodes { oid committedDate } }`,
+  );
+  return `query {
+  repository(owner: ${JSON.stringify(owner)}, name: ${JSON.stringify(name)}) {
+    defaultBranchRef { target { ... on Commit {
+${histories.join("\n")}
+    } } }
+  }
+}`;
+}
+
+// Distinct commits that touched any sampled test file.
+async function fetchTestCommits(fullName: string, tests: string[]): Promise<RepoData["testCommits"]> {
+  // Fewer than 2 test files can't earn the credit, so their history isn't worth a call.
+  if (tests.length < 2) return [];
+  const testPaths = sampleEvenly(tests, TEST_SAMPLE);
+  const data = await ghGraphql(testHistoryQuery(fullName, testPaths), {});
+
+  const bySha = new Map<string, string>();
+  const target = data.repository?.defaultBranchRef?.target ?? {};
+  testPaths.forEach((_, i) => {
+    for (const c of target[`t${i}`]?.nodes ?? []) bySha.set(c.oid, c.committedDate);
+  });
+  return [...bySha].map(([sha, date]) => ({ sha, date }));
 }
 
 // --- profiles ---
