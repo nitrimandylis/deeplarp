@@ -1,6 +1,6 @@
 {
   "name": "deeplarp",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Scores how much a GitHub profile or repo is larping: what it claims against what the code shows.",
   "type": "module",
   "bin": {
@@ -44,7 +44,7 @@
   },
   "dependencies": {
     "@resvg/resvg-js": "^2.6.2",
-    "satori": "^0.35.0"
+    "satori": "^0.26.0"
   },
   "publishConfig": {
     "access": "public"
