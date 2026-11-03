@@ -1,6 +1,6 @@
 {
   "name": "deeplarp",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "description": "Scores how much a GitHub profile or repo is larping: what it claims against what the code shows.",
   "type": "module",
   "bin": {
